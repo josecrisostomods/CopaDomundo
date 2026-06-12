@@ -18,10 +18,13 @@ create table if not exists public.leagues (
 create table if not exists public.league_members (
   league_id uuid references public.leagues(id) on delete cascade,
   user_id uuid references public.profiles(id) on delete cascade,
-  role text not null default 'member' check (role in ('owner', 'admin', 'member')),
+  role text not null default 'member' check (role in ('owner', 'member')),
   joined_at timestamptz not null default now(),
   primary key (league_id, user_id)
 );
+
+alter table public.league_members drop constraint if exists league_members_role_check;
+alter table public.league_members add constraint league_members_role_check check (role in ('owner', 'member'));
 
 create table if not exists public.teams (
   id text primary key,
@@ -210,7 +213,7 @@ begin
   end loop;
 
   insert into public.leagues (name, code, owner_id)
-  values (coalesce(nullif(trim(league_name), ''), 'Bolao da turma'), new_code, auth.uid())
+  values (coalesce(nullif(trim(league_name), ''), 'Minha liga'), new_code, auth.uid())
   returning * into new_league;
 
   insert into public.league_members (league_id, user_id, role)

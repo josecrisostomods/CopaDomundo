@@ -27,9 +27,6 @@ import {
   navItems,
 } from "./config/appConfig";
 import {
-  DEMO_LEAGUE,
-  DEMO_PREDICTIONS,
-  DEMO_USERS,
   MOCK_FIXTURES,
 } from "./data/mockWorldCup";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
@@ -70,18 +67,36 @@ function getInitialFixtures() {
   return hasOpenScheduledGame ? storedFixtures : MOCK_FIXTURES;
 }
 
+function getInitialProfile() {
+  const storedProfile = readStorage(STORAGE.profile, null);
+  return storedProfile?.id === "user-demo" ? null : storedProfile;
+}
+
+function getInitialLeagues() {
+  const storedLeagues = readStorage(STORAGE.leagues, []);
+  if (!Array.isArray(storedLeagues)) return [];
+  return storedLeagues.filter((league) => league.id !== "league-demo");
+}
+
+function getInitialActiveLeagueId() {
+  const storedLeagueId = readStorage(STORAGE.activeLeague, null);
+  return storedLeagueId === "league-demo" ? null : storedLeagueId;
+}
+
+function getInitialPredictions() {
+  const storedPredictions = readStorage(STORAGE.predictions, []);
+  if (!Array.isArray(storedPredictions)) return [];
+  return storedPredictions.filter((prediction) => prediction.leagueId !== "league-demo");
+}
+
 function App() {
-  const [profile, setProfile] = useState(() => readStorage(STORAGE.profile, null));
+  const [profile, setProfile] = useState(getInitialProfile);
   const [activeTab, setActiveTab] = useState("home");
-  const [leagues, setLeagues] = useState(() => readStorage(STORAGE.leagues, [DEMO_LEAGUE]));
-  const [activeLeagueId, setActiveLeagueId] = useState(() =>
-    readStorage(STORAGE.activeLeague, DEMO_LEAGUE.id),
-  );
+  const [leagues, setLeagues] = useState(getInitialLeagues);
+  const [activeLeagueId, setActiveLeagueId] = useState(getInitialActiveLeagueId);
   const [fixtures, setFixtures] = useState(getInitialFixtures);
-  const [predictions, setPredictions] = useState(() =>
-    readStorage(STORAGE.predictions, DEMO_PREDICTIONS),
-  );
-  const [remoteUsers, setRemoteUsers] = useState([]);
+  const [predictions, setPredictions] = useState(getInitialPredictions);
+  const [membersByLeague, setMembersByLeague] = useState({});
   const [syncState, setSyncState] = useState({ loading: false, message: "" });
   const [dataState, setDataState] = useState({ loading: false, message: "" });
   const [lastSync, setLastSync] = useState(() => readStorage(STORAGE.lastSync, null));
@@ -96,42 +111,60 @@ function App() {
   useEffect(() => writeStorage(STORAGE.lastSync, lastSync), [lastSync]);
   useEffect(() => writeStorage(STORAGE.predictions, predictions), [predictions]);
 
-  const activeLeague = leagues.find((league) => league.id === activeLeagueId) || leagues[0];
-  const currentUser = profile || DEMO_USERS[0];
+  const activeLeague = leagues.find((league) => league.id === activeLeagueId) || leagues[0] || null;
+  const currentUser = profile;
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || profile) return undefined;
+
+    let cancelled = false;
+
+    async function restoreSession() {
+      const { data } = await supabase.auth.getUser();
+      if (cancelled || !data.user) return;
+
+      const name = data.user.user_metadata?.name || data.user.email?.split("@")[0] || "Jogador";
+      setProfile({
+        id: data.user.id,
+        name,
+        email: data.user.email || "",
+        avatar: name.slice(0, 2).toUpperCase(),
+      });
+    }
+
+    restoreSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
   useEffect(() => {
     if (!profile || !isSupabaseConfigured) return undefined;
 
     let cancelled = false;
 
     async function loadRemoteData() {
-      setDataState({ loading: true, message: "Carregando dados do Supabase..." });
+      setDataState({ loading: true, message: "Carregando suas ligas..." });
       try {
         await upsertProfile(profile);
-        let remote = await fetchRemoteState();
-
-        if (!remote.leagues.length) {
-          const firstLeague = await createRemoteLeague("Bolao da turma");
-          remote = { ...remote, leagues: [firstLeague] };
-        }
+        const remote = await fetchRemoteState();
 
         if (cancelled) return;
 
-        if (remote.leagues.length) {
-          setLeagues(remote.leagues);
-          setActiveLeagueId((current) =>
-            remote.leagues.some((league) => league.id === current) ? current : remote.leagues[0].id,
-          );
-        }
+        setLeagues(remote.leagues);
+        setActiveLeagueId((current) =>
+          remote.leagues.some((league) => league.id === current) ? current : remote.leagues[0]?.id || null,
+        );
 
         if (remote.fixtures.length) setFixtures(remote.fixtures);
         setPredictions(remote.predictions);
-        setRemoteUsers(remote.users);
-        setDataState({ loading: false, message: "Dados conectados ao Supabase." });
+        setMembersByLeague(remote.membersByLeague || {});
+        setDataState({ loading: false, message: remote.leagues.length ? "Ligas carregadas." : "Crie ou entre em uma liga." });
       } catch (error) {
         if (cancelled) return;
         setDataState({
           loading: false,
-          message: `${error.message} O modo local continua funcionando.`,
+          message: `${error.message} Nao foi possivel carregar suas ligas.`,
         });
       }
     }
@@ -143,46 +176,46 @@ function App() {
   }, [profile]);
 
   const users = useMemo(() => {
-    const baseUsers = remoteUsers.length
-      ? remoteUsers
-      : DEMO_USERS.filter((user) => user.id !== "user-demo");
-    const withoutCurrent = baseUsers.filter((user) => user.id !== currentUser.id);
+    if (!currentUser || !activeLeague?.id) return [];
+    const leagueMembers = membersByLeague[activeLeague.id] || [];
+    const withoutCurrent = leagueMembers.filter((user) => user.id !== currentUser.id);
     return [currentUser, ...withoutCurrent];
-  }, [currentUser, remoteUsers]);
+  }, [activeLeague?.id, currentUser, membersByLeague]);
   const leaguePredictions = predictions.filter((prediction) => prediction.leagueId === activeLeague?.id);
-  const userPredictions = leaguePredictions.filter((prediction) => prediction.userId === currentUser.id);
+  const userPredictions = leaguePredictions.filter((prediction) => prediction.userId === currentUser?.id);
   const ranking = useMemo(
     () => buildRanking(users, fixtures, leaguePredictions, DEFAULT_SCORING),
     [users, fixtures, leaguePredictions],
   );
-  const profileRank = ranking.find((item) => item.id === currentUser.id);
-
-  function handleLocalLogin(payload) {
-    setProfile({
-      id: "user-demo",
-      name: payload.name || "Voce",
-      email: payload.email || "",
-      avatar: (payload.name || "VC").slice(0, 2).toUpperCase(),
-    });
-  }
+  const profileRank = ranking.find((item) => item.id === currentUser?.id);
 
   async function handleSupabaseAuth(payload, mode) {
     if (!isSupabaseConfigured || !supabase) {
-      handleLocalLogin(payload);
-      return;
+      throw new Error("Login indisponivel no momento.");
+    }
+
+    if (!payload.email || !payload.password) {
+      throw new Error("Informe e-mail e senha.");
     }
 
     const authCall =
       mode === "register"
-        ? supabase.auth.signUp({ email: payload.email, password: payload.password })
+        ? supabase.auth.signUp({
+            email: payload.email,
+            password: payload.password,
+            options: { data: { name: payload.name || payload.email.split("@")[0] } },
+          })
         : supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
 
     const { data, error } = await authCall;
     if (error) throw error;
+    if (!data.session && mode === "register") {
+      throw new Error("Conta criada. Confirme seu e-mail para entrar.");
+    }
 
     const name = payload.name || data.user?.email?.split("@")[0] || "Jogador";
     setProfile({
-      id: data.user?.id || "user-demo",
+      id: data.user.id,
       name,
       email: data.user?.email || payload.email,
       avatar: name.slice(0, 2).toUpperCase(),
@@ -190,6 +223,11 @@ function App() {
   }
 
   async function savePrediction(fixture, form) {
+    if (!activeLeague || !currentUser) {
+      setDataState({ loading: false, message: "Entre em uma liga antes de enviar palpites." });
+      return;
+    }
+
     const existing = predictions.find(
       (prediction) =>
         prediction.fixtureId === fixture.id &&
@@ -214,88 +252,78 @@ function App() {
       updatedAt: new Date().toISOString(),
     };
 
+    const previousPredictions = predictions;
     setPredictions((items) =>
       existing
         ? items.map((item) => (item.id === existing.id ? nextPrediction : item))
         : [nextPrediction, ...items],
     );
 
-    if (isSupabaseConfigured && activeLeague?.id !== DEMO_LEAGUE.id) {
+    if (isSupabaseConfigured) {
       try {
         const saved = await saveRemotePrediction(nextPrediction);
         setPredictions((items) =>
           items.map((item) => (item.id === nextPrediction.id ? saved : item)),
         );
-        setDataState({ loading: false, message: "Palpite salvo no Supabase." });
+        setDataState({ loading: false, message: "Palpite salvo." });
       } catch (error) {
+        setPredictions(previousPredictions);
         setDataState({
           loading: false,
-          message: `${error.message} O palpite ficou salvo apenas neste navegador.`,
+          message: `${error.message} Nao foi possivel salvar o palpite.`,
         });
       }
     }
   }
 
   async function createLeague(name) {
-    if (isSupabaseConfigured) {
-      setDataState({ loading: true, message: "Criando liga no Supabase..." });
-      try {
-        const league = await createRemoteLeague(name);
-        setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
-        setActiveLeagueId(league.id);
-        setActiveTab("league");
-        setDataState({ loading: false, message: "Liga criada no Supabase." });
-        return;
-      } catch (error) {
-        setDataState({
-          loading: false,
-          message: `${error.message} Criando liga local como fallback.`,
-        });
-      }
+    if (!isSupabaseConfigured || !currentUser) {
+      setDataState({ loading: false, message: "Nao foi possivel criar liga agora." });
+      return;
     }
 
-    const league = {
-      id: makeId("league"),
-      name: name || "Minha liga",
-      code: Math.random().toString(36).slice(2, 8).toUpperCase(),
-    };
-    setLeagues((items) => [league, ...items]);
-    setActiveLeagueId(league.id);
-    setActiveTab("league");
+    setDataState({ loading: true, message: "Criando liga..." });
+    try {
+      const league = await createRemoteLeague(name);
+      setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
+      setMembersByLeague((items) => ({ ...items, [league.id]: [currentUser] }));
+      setActiveLeagueId(league.id);
+      setActiveTab("league");
+      setDataState({ loading: false, message: "Liga criada." });
+    } catch (error) {
+      setDataState({
+        loading: false,
+        message: `${error.message} Nao foi possivel criar a liga.`,
+      });
+    }
   }
 
   async function joinLeague(code) {
     const normalized = code.trim().toUpperCase();
 
-    if (isSupabaseConfigured) {
-      try {
-        const league = await joinRemoteLeague(normalized);
-        setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
-        setActiveLeagueId(league.id);
-        setDataState({ loading: false, message: "Voce entrou na liga pelo Supabase." });
-        return "Voce entrou na liga.";
-      } catch (error) {
-        setDataState({
-          loading: false,
-          message: `${error.message} Tentando fallback local.`,
-        });
-      }
+    if (!isSupabaseConfigured || !currentUser) {
+      return "Nao foi possivel entrar na liga agora.";
     }
 
-    const existing = leagues.find((league) => league.code === normalized);
-    if (existing) {
-      setActiveLeagueId(existing.id);
+    try {
+      const league = await joinRemoteLeague(normalized);
+      setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
+      setMembersByLeague((items) => ({
+        ...items,
+        [league.id]: items[league.id]?.some((user) => user.id === currentUser.id)
+          ? items[league.id]
+          : [currentUser, ...(items[league.id] || [])],
+      }));
+      setActiveLeagueId(league.id);
+      setDataState({ loading: false, message: "Voce entrou na liga." });
       return "Voce entrou na liga.";
+    } catch (error) {
+      setDataState({
+        loading: false,
+        message: `${error.message} Nao foi possivel entrar na liga.`,
+      });
+      return error.message || "Nao foi possivel entrar na liga.";
     }
-
-    const league = {
-      id: makeId("league"),
-      name: `Liga ${normalized}`,
-      code: normalized,
-    };
-    setLeagues((items) => [league, ...items]);
-    setActiveLeagueId(league.id);
-    return "Liga adicionada em modo local. No Supabase, o codigo valida o convite real.";
   }
 
   const handleSync = useCallback(async (provider = "api-football", options = {}) => {
@@ -327,13 +355,15 @@ function App() {
       if (!silent) {
         setSyncState({
           loading: false,
-          message: `${error.message} O fallback local continua disponivel.`,
+          message: `${error.message} O calendario salvo continua disponivel.`,
         });
       }
     }
   }, []);
 
   async function updateProfile(nextProfile) {
+    if (!currentUser) return;
+
     const name = nextProfile.name?.trim() || currentUser.name || "Jogador";
     const email = nextProfile.email?.trim() || "";
     const updatedProfile = {
@@ -346,17 +376,17 @@ function App() {
     setProfile(updatedProfile);
 
     if (!isSupabaseConfigured) {
-      setDataState({ loading: false, message: "Perfil atualizado neste navegador." });
+      setDataState({ loading: false, message: "Perfil atualizado." });
       return;
     }
 
     try {
       await upsertProfile(updatedProfile);
-      setDataState({ loading: false, message: "Perfil atualizado no Supabase." });
+      setDataState({ loading: false, message: "Perfil atualizado." });
     } catch (error) {
       setDataState({
         loading: false,
-        message: `${error.message} O perfil ficou atualizado neste navegador.`,
+        message: `${error.message} Nao foi possivel sincronizar o perfil.`,
       });
     }
   }
@@ -391,7 +421,17 @@ function App() {
   }, [handleSync, profile]);
 
   if (!profile) {
-    return <LoginScreen onLocalLogin={handleLocalLogin} onSupabaseAuth={handleSupabaseAuth} />;
+    return <LoginScreen onSupabaseAuth={handleSupabaseAuth} />;
+  }
+
+  async function handleLogout() {
+    if (supabase) await supabase.auth.signOut();
+    setProfile(null);
+    setLeagues([]);
+    setActiveLeagueId(null);
+    setPredictions([]);
+    setMembersByLeague({});
+    setDataState({ loading: false, message: "" });
   }
 
   return (
@@ -404,7 +444,7 @@ function App() {
         profile={currentUser}
         setActiveTab={setActiveTab}
         syncState={syncState}
-        onLogout={() => setProfile(null)}
+        onLogout={handleLogout}
       />
 
       <main className="app-main">
@@ -422,25 +462,34 @@ function App() {
         )}
 
         {activeTab === "games" && (
-          <GamesView
-            fixtures={fixtures}
-            predictions={userPredictions}
-            onSavePrediction={savePrediction}
-          />
+          activeLeague ? (
+            <GamesView
+              fixtures={fixtures}
+              predictions={userPredictions}
+              onSavePrediction={savePrediction}
+            />
+          ) : (
+            <LeagueRequired setActiveTab={setActiveTab} />
+          )
         )}
 
         {activeTab === "ranking" && (
-          <RankingView
-            activeLeague={activeLeague}
-            ranking={ranking}
-            fixtures={fixtures}
-            predictions={leaguePredictions}
-          />
+          activeLeague ? (
+            <RankingView
+              activeLeague={activeLeague}
+              ranking={ranking}
+              fixtures={fixtures}
+              predictions={leaguePredictions}
+            />
+          ) : (
+            <LeagueRequired setActiveTab={setActiveTab} />
+          )
         )}
 
         {activeTab === "league" && (
           <LeagueView
             activeLeague={activeLeague}
+            currentUser={currentUser}
             leagues={leagues}
             onCreateLeague={createLeague}
             onJoinLeague={joinLeague}
@@ -453,7 +502,7 @@ function App() {
             activeLeague={activeLeague}
             dataState={dataState}
             lastSync={lastSync}
-            onLogout={() => setProfile(null)}
+            onLogout={handleLogout}
             onUpdateProfile={updateProfile}
             profile={currentUser}
             profileRank={profileRank}
@@ -468,7 +517,7 @@ function App() {
   );
 }
 
-function LoginScreen({ onLocalLogin, onSupabaseAuth }) {
+function LoginScreen({ onSupabaseAuth }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [message, setMessage] = useState("");
@@ -479,11 +528,7 @@ function LoginScreen({ onLocalLogin, onSupabaseAuth }) {
     setLoading(true);
     setMessage("");
     try {
-      if (isSupabaseConfigured && form.email && form.password) {
-        await onSupabaseAuth(form, mode);
-      } else {
-        onLocalLogin(form);
-      }
+      await onSupabaseAuth(form, mode);
     } catch (error) {
       setMessage(error.message || "Nao foi possivel entrar.");
     } finally {
@@ -512,14 +557,16 @@ function LoginScreen({ onLocalLogin, onSupabaseAuth }) {
           </button>
         </div>
 
-        <label>
-          Nome
-          <input
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-            placeholder="Seu nome no ranking"
-          />
-        </label>
+        {mode === "register" && (
+          <label>
+            Nome
+            <input
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              placeholder="Seu nome no ranking"
+            />
+          </label>
+        )}
 
         <label>
           E-mail
@@ -537,21 +584,21 @@ function LoginScreen({ onLocalLogin, onSupabaseAuth }) {
             type="password"
             value={form.password}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
-            placeholder={isSupabaseConfigured ? "Senha do Supabase" : "Opcional no modo local"}
+            placeholder="Sua senha"
           />
         </label>
 
         {message && <p className="form-message">{message}</p>}
 
-        <button className="primary-button" disabled={loading}>
-          {loading ? "Entrando..." : isSupabaseConfigured ? "Continuar" : "Entrar em modo demo"}
+        <button className="primary-button" disabled={loading || !isSupabaseConfigured}>
+          {loading ? "Entrando..." : mode === "register" ? "Criar conta" : "Entrar"}
           <ChevronRight size={18} />
         </button>
 
         <p className="helper-text">
           {isSupabaseConfigured
-            ? "Supabase detectado. O login real sera usado."
-            : "Sem Supabase configurado: o app salva dados no navegador para teste."}
+            ? "Cada jogador usa sua propria conta para manter ligas, ranking e palpites separados."
+            : "Login indisponivel no momento."}
         </p>
       </form>
     </main>
@@ -641,12 +688,16 @@ function Dashboard({
       <div className="hero-panel">
         <div>
           <span className="eyebrow">Liga ativa</span>
-          <h1>{activeLeague?.name}</h1>
-          <p>Veja os proximos jogos, complete seus palpites e acompanhe o ranking da turma.</p>
+          <h1>{activeLeague?.name || "Entre em uma liga"}</h1>
+          <p>
+            {activeLeague
+              ? "Veja os proximos jogos, complete seus palpites e acompanhe o ranking da turma."
+              : "Crie uma liga ou entre com um codigo para comecar a disputar com seus amigos."}
+          </p>
         </div>
-        <button className="primary-button compact" onClick={() => setActiveTab("games")}>
-          Palpitar agora
-          <Edit3 size={18} />
+        <button className="primary-button compact" onClick={() => setActiveTab(activeLeague ? "games" : "league")}>
+          {activeLeague ? "Palpitar agora" : "Abrir ligas"}
+          {activeLeague ? <Edit3 size={18} /> : <UsersRound size={18} />}
         </button>
       </div>
 
@@ -687,6 +738,7 @@ function Dashboard({
                 <b>{user.points} pts</b>
               </div>
             ))}
+            {!ranking.length && <p className="helper-text">O ranking aparece quando sua liga tiver participantes.</p>}
           </div>
         </section>
       </div>
@@ -1133,11 +1185,36 @@ function RankingView({ activeLeague, ranking, fixtures, predictions }) {
   );
 }
 
-function LeagueView({ activeLeague, leagues, onCreateLeague, onJoinLeague, onSelectLeague }) {
+function LeagueRequired({ setActiveTab }) {
+  return (
+    <section className="screen-stack">
+      <ScreenHeading
+        icon={UsersRound}
+        title="Entre em uma liga"
+        subtitle="Crie uma liga ou use o codigo recebido para liberar palpites e ranking."
+      />
+
+      <section className="panel form-panel">
+        <div className="panel-title">
+          <Link2 size={20} />
+          <h2>Ligas</h2>
+        </div>
+        <p className="helper-text">Cada liga tem seu proprio ranking, participantes e palpites.</p>
+        <button className="primary-button full" onClick={() => setActiveTab("league")}>
+          Abrir ligas
+          <ChevronRight size={18} />
+        </button>
+      </section>
+    </section>
+  );
+}
+
+function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague, onJoinLeague, onSelectLeague }) {
   const [newLeagueName, setNewLeagueName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [message, setMessage] = useState("");
   const [joining, setJoining] = useState(false);
+  const canSeeActiveCode = activeLeague?.ownerId === currentUser?.id;
 
   async function handleJoinLeague() {
     if (!inviteCode.trim()) return;
@@ -1165,11 +1242,25 @@ function LeagueView({ activeLeague, leagues, onCreateLeague, onJoinLeague, onSel
             <Link2 size={20} />
             <h2>Liga ativa</h2>
           </div>
-          <div className="league-code">
-            <span>{activeLeague?.name}</span>
-            <strong>{activeLeague?.code}</strong>
-          </div>
-          <p className="helper-text">Compartilhe esse codigo com seus amigos para todos disputarem o mesmo ranking.</p>
+          {activeLeague ? (
+            <>
+              <div className={`league-code ${canSeeActiveCode ? "" : "private"}`}>
+                <span>{activeLeague.name}</span>
+                <strong>{canSeeActiveCode && activeLeague.code ? activeLeague.code : "Convite privado"}</strong>
+              </div>
+              <p className="helper-text">
+                {canSeeActiveCode
+                  ? "Compartilhe esse codigo com seus amigos para todos disputarem o mesmo ranking."
+                  : "O codigo de convite fica visivel apenas para quem criou a liga."}
+              </p>
+            </>
+          ) : (
+            <div className="empty-state compact">
+              <UsersRound size={22} />
+              <strong>Nenhuma liga ativa</strong>
+              <span>Crie uma liga ou entre com o codigo recebido de um amigo.</span>
+            </div>
+          )}
         </section>
 
         <section className="panel form-panel">
@@ -1201,7 +1292,7 @@ function LeagueView({ activeLeague, leagues, onCreateLeague, onJoinLeague, onSel
         </div>
         <label>
           Codigo de convite
-          <input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder="COPA26" />
+          <input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder="ABC123" />
         </label>
         {message && <p className="form-message">{message}</p>}
         <button
@@ -1226,10 +1317,20 @@ function LeagueView({ activeLeague, leagues, onCreateLeague, onJoinLeague, onSel
               className={league.id === activeLeague?.id ? "active" : ""}
               onClick={() => onSelectLeague(league.id)}
             >
-              <span>{league.name}</span>
-              <strong>{league.code}</strong>
+              <span>
+                <strong>{league.name}</strong>
+                <small>{league.ownerId === currentUser?.id ? "Criada por voce" : "Voce participa"}</small>
+              </span>
+              <b>{league.ownerId === currentUser?.id ? league.code || "Codigo" : `${league.memberCount || 1} membros`}</b>
             </button>
           ))}
+          {!leagues.length && (
+            <div className="empty-state compact">
+              <ListChecks size={22} />
+              <strong>Sem ligas ainda</strong>
+              <span>As ligas que voce criar ou entrar aparecem aqui.</span>
+            </div>
+          )}
         </div>
       </section>
     </section>
@@ -1250,6 +1351,7 @@ function ProfileView({
   const [draft, setDraft] = useState({ name: profile.name || "", email: profile.email || "" });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const canSeeActiveCode = activeLeague?.ownerId === profile.id;
 
   useEffect(() => {
     setDraft({ name: profile.name || "", email: profile.email || "" });
@@ -1340,7 +1442,7 @@ function ProfileView({
 
           <div className="league-code">
             <span>{activeLeague?.name || "Liga ativa"}</span>
-            <strong>{activeLeague?.code || "----"}</strong>
+            <strong>{canSeeActiveCode && activeLeague?.code ? activeLeague.code : activeLeague ? "Convite privado" : "----"}</strong>
           </div>
 
           <div className="metric-list">

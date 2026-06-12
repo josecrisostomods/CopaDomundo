@@ -4,11 +4,16 @@ function avatarFor(name) {
   return (name || "??").slice(0, 2).toUpperCase();
 }
 
-function mapLeague(row) {
+function mapLeague(row, meta = {}) {
+  const isOwner = meta.role === "owner" || (meta.currentUserId && row.owner_id === meta.currentUserId);
+
   return {
     id: row.id,
     name: row.name,
-    code: row.code,
+    code: isOwner ? row.code : null,
+    ownerId: row.owner_id,
+    role: meta.role || (isOwner ? "owner" : "member"),
+    memberCount: meta.memberCount || 1,
   };
 }
 
@@ -90,11 +95,11 @@ export async function createRemoteLeague(name) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 
   const { data, error } = await supabase.rpc("create_league_with_owner", {
-    league_name: name || "Bolao da turma",
+    league_name: name || "Minha liga",
   });
 
   if (error) throw error;
-  return mapLeague(data);
+  return mapLeague(data, { role: "owner", memberCount: 1 });
 }
 
 export async function joinRemoteLeague(code) {
@@ -105,11 +110,14 @@ export async function joinRemoteLeague(code) {
   });
 
   if (error) throw error;
-  return mapLeague(data);
+  return mapLeague(data, { role: "member", memberCount: 1 });
 }
 
 export async function fetchRemoteState() {
   if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const userResult = await supabase.auth.getUser();
+  const currentUserId = userResult.data.user?.id;
 
   const [
     leaguesResult,
@@ -118,11 +126,11 @@ export async function fetchRemoteState() {
     predictionsResult,
     membersResult,
   ] = await Promise.all([
-    supabase.from("leagues").select("id,name,code").order("created_at", { ascending: false }),
+    supabase.from("leagues").select("id,name,code,owner_id").order("created_at", { ascending: false }),
     supabase.from("teams").select("id,name,flag,crest_url"),
     supabase.from("fixtures").select("*").order("kickoff", { ascending: true }),
     supabase.from("predictions").select("*").order("updated_at", { ascending: false }),
-    supabase.from("league_members").select("league_id, profiles(id,name,avatar)"),
+    supabase.from("league_members").select("league_id,user_id,role,profiles(id,name,avatar)"),
   ]);
 
   for (const result of [leaguesResult, teamsResult, fixturesResult, predictionsResult, membersResult]) {
@@ -136,17 +144,36 @@ export async function fetchRemoteState() {
     ]),
   );
   const profileMap = new Map();
+  const roleByLeague = new Map();
+  const membersByLeague = {};
 
   for (const member of membersResult.data || []) {
     if (member.profiles?.id) {
-      profileMap.set(member.profiles.id, mapProfile(member.profiles));
+      const profile = mapProfile(member.profiles);
+      profileMap.set(member.profiles.id, profile);
+      membersByLeague[member.league_id] = membersByLeague[member.league_id] || [];
+
+      if (!membersByLeague[member.league_id].some((user) => user.id === profile.id)) {
+        membersByLeague[member.league_id].push(profile);
+      }
+    }
+
+    if (member.user_id === currentUserId) {
+      roleByLeague.set(member.league_id, member.role);
     }
   }
 
   return {
-    leagues: (leaguesResult.data || []).map(mapLeague),
+    leagues: (leaguesResult.data || []).map((league) =>
+      mapLeague(league, {
+        currentUserId,
+        role: roleByLeague.get(league.id),
+        memberCount: membersByLeague[league.id]?.length || 1,
+      }),
+    ),
     fixtures: (fixturesResult.data || []).map((fixture) => mapFixture(fixture, teamMap)),
     predictions: (predictionsResult.data || []).map(mapPrediction),
+    membersByLeague,
     users: Array.from(profileMap.values()),
   };
 }

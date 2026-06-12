@@ -6,9 +6,9 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 
 - React + Vite na raiz do repositorio.
 - Interface pensada primeiro para celular.
-- Login local de demonstracao e suporte opcional ao Supabase.
+- Login real por e-mail e senha.
 - Ligas com codigo de convite.
-- Calendario com 104 jogos no fallback local.
+- Calendario com 104 jogos salvos no app para garantir navegacao mesmo antes da API responder.
 - Palpite de fase de grupos: vencedor, empate e placar exato.
 - Palpite de mata-mata: vencedor ou empate nos 90 minutos, quem passa e se passa no tempo normal, prorrogacao ou penaltis.
 - Ranking por liga com criterios de desempate.
@@ -28,7 +28,7 @@ npm run dev
 
 Depois abra `http://127.0.0.1:5173`.
 
-Sem `.env`, o app entra em modo demo e salva dados no navegador.
+Para usar varios jogadores reais, configure as variaveis do Supabase antes do deploy.
 
 ## Variaveis de ambiente
 
@@ -154,7 +154,7 @@ Desempate:
 api/sync-fixtures.js        Funcao serverless para buscar jogos da API
 src/App.jsx                Telas e fluxo do produto
 src/config/appConfig.js    Configuracoes de navegacao e armazenamento local
-src/data/mockWorldCup.js   Fallback local com calendario completo
+src/data/mockWorldCup.js   Calendario local com jogos da Copa
 src/lib/scoring.js         Regras de pontuacao e ranking
 src/lib/supabase.js        Cliente Supabase opcional
 src/styles.css             Visual mobile-first

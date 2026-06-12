@@ -922,6 +922,11 @@ legend {
   letter-spacing: 0.08em;
 }
 
+.league-code.private strong {
+  font-size: 1.15rem;
+  letter-spacing: 0;
+}
+
 .form-panel {
   display: grid;
   gap: 13px;
@@ -936,12 +941,39 @@ legend {
   padding: 0 12px;
 }
 
+.league-list span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+
+.league-list span strong,
+.league-list span small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.league-list span small {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
 .league-list button:not(.active) {
   color: var(--text);
 }
 
-.league-list strong {
+.league-list b {
   color: var(--gold);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.empty-state.compact {
+  min-height: 130px;
+  box-shadow: none;
 }
 
 .profile-preview {
