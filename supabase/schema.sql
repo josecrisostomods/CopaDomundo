@@ -627,3 +627,5 @@ grant execute on function public.save_player_prediction(text, uuid, text, text, 
 
 revoke execute on function public.create_player_session(uuid) from public, anon, authenticated;
 revoke execute on function public.player_id_from_session(text) from public, anon, authenticated;
+
+notify pgrst, 'reload schema';
