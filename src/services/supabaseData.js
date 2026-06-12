@@ -20,8 +20,10 @@ function mapLeague(row, meta = {}) {
 function mapProfile(row) {
   return {
     id: row.id,
+    username: row.username,
     name: row.name,
     avatar: row.avatar || avatarFor(row.name),
+    displayNameSet: Boolean(row.display_name_set),
   };
 }
 
@@ -80,60 +82,84 @@ function mapPrediction(row) {
 export async function upsertProfile(profile) {
   if (!supabase) return profile;
 
-  const row = {
-    id: profile.id,
-    name: profile.name,
-    avatar: profile.avatar || avatarFor(profile.name),
-  };
+  const { data, error } = await supabase.rpc("update_player_profile", {
+    session_token: profile.sessionToken,
+    display_name: profile.name,
+  });
 
-  const { error } = await supabase.from("profiles").upsert(row, { onConflict: "id" });
   if (error) throw error;
-  return profile;
+  return mapProfile(data);
 }
 
-export async function createRemoteLeague(name) {
+function mapAuthPayload(payload) {
+  return {
+    sessionToken: payload.sessionToken,
+    profile: mapProfile(payload.profile),
+  };
+}
+
+export async function registerPlayer({ username, password }) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("register_player", {
+    login_username: username,
+    login_password: password,
+  });
+
+  if (error) throw error;
+  return mapAuthPayload(data);
+}
+
+export async function loginPlayer({ username, password }) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("login_player", {
+    login_username: username,
+    login_password: password,
+  });
+
+  if (error) throw error;
+  return mapAuthPayload(data);
+}
+
+export async function createRemoteLeague(name, sessionToken) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 
   const { data, error } = await supabase.rpc("create_league_with_owner", {
+    session_token: sessionToken,
     league_name: name || "Minha liga",
   });
 
   if (error) throw error;
-  return mapLeague(data, { role: "owner", memberCount: 1 });
+  return mapLeague(data, data);
 }
 
-export async function joinRemoteLeague(code) {
+export async function joinRemoteLeague(code, sessionToken) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 
   const { data, error } = await supabase.rpc("join_league_by_code", {
+    session_token: sessionToken,
     invite_code: code.trim().toUpperCase(),
   });
 
   if (error) throw error;
-  return mapLeague(data, { role: "member", memberCount: 1 });
+  return mapLeague(data, data);
 }
 
-export async function fetchRemoteState() {
+export async function fetchRemoteState(sessionToken) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 
-  const userResult = await supabase.auth.getUser();
-  const currentUserId = userResult.data.user?.id;
-
   const [
-    leaguesResult,
+    stateResult,
     teamsResult,
     fixturesResult,
-    predictionsResult,
-    membersResult,
   ] = await Promise.all([
-    supabase.from("leagues").select("id,name,code,owner_id").order("created_at", { ascending: false }),
+    supabase.rpc("get_player_state", { session_token: sessionToken }),
     supabase.from("teams").select("id,name,flag,crest_url"),
     supabase.from("fixtures").select("*").order("kickoff", { ascending: true }),
-    supabase.from("predictions").select("*").order("updated_at", { ascending: false }),
-    supabase.from("league_members").select("league_id,user_id,role,profiles(id,name,avatar)"),
   ]);
 
-  for (const result of [leaguesResult, teamsResult, fixturesResult, predictionsResult, membersResult]) {
+  for (const result of [stateResult, teamsResult, fixturesResult]) {
     if (result.error) throw result.error;
   }
 
@@ -143,65 +169,44 @@ export async function fetchRemoteState() {
       { id: team.id, name: team.name, flag: team.flag || "FIFA", crest: team.crest_url || null },
     ]),
   );
-  const profileMap = new Map();
-  const roleByLeague = new Map();
+  const state = stateResult.data || {};
   const membersByLeague = {};
 
-  for (const member of membersResult.data || []) {
-    if (member.profiles?.id) {
-      const profile = mapProfile(member.profiles);
-      profileMap.set(member.profiles.id, profile);
-      membersByLeague[member.league_id] = membersByLeague[member.league_id] || [];
+  for (const member of state.members || []) {
+    const profile = mapProfile(member);
+    membersByLeague[member.leagueId] = membersByLeague[member.leagueId] || [];
 
-      if (!membersByLeague[member.league_id].some((user) => user.id === profile.id)) {
-        membersByLeague[member.league_id].push(profile);
-      }
-    }
-
-    if (member.user_id === currentUserId) {
-      roleByLeague.set(member.league_id, member.role);
+    if (!membersByLeague[member.leagueId].some((user) => user.id === profile.id)) {
+      membersByLeague[member.leagueId].push(profile);
     }
   }
 
   return {
-    leagues: (leaguesResult.data || []).map((league) =>
-      mapLeague(league, {
-        currentUserId,
-        role: roleByLeague.get(league.id),
-        memberCount: membersByLeague[league.id]?.length || 1,
-      }),
-    ),
+    profile: mapProfile(state.profile),
+    leagues: (state.leagues || []).map((league) => mapLeague(league, league)),
     fixtures: (fixturesResult.data || []).map((fixture) => mapFixture(fixture, teamMap)),
-    predictions: (predictionsResult.data || []).map(mapPrediction),
+    predictions: (state.predictions || []).map(mapPrediction),
     membersByLeague,
-    users: Array.from(profileMap.values()),
   };
 }
 
-export async function saveRemotePrediction(prediction) {
+export async function saveRemotePrediction(prediction, sessionToken) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 
-  const row = {
-    league_id: prediction.leagueId,
-    user_id: prediction.userId,
-    fixture_id: prediction.fixtureId,
-    normal_outcome: prediction.normalOutcome,
-    home_score: prediction.homeScore,
-    away_score: prediction.awayScore,
-    qualifier_team_id: prediction.qualifier,
-    qualification_method: prediction.qualificationMethod,
-    extra_home_score: prediction.extraHomeScore,
-    extra_away_score: prediction.extraAwayScore,
-    penalties_home: prediction.penaltiesHome,
-    penalties_away: prediction.penaltiesAway,
-    updated_at: new Date().toISOString(),
-  };
-
-  const { data, error } = await supabase
-    .from("predictions")
-    .upsert(row, { onConflict: "league_id,user_id,fixture_id" })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc("save_player_prediction", {
+    session_token: sessionToken,
+    p_league_id: prediction.leagueId,
+    p_fixture_id: prediction.fixtureId,
+    p_normal_outcome: prediction.normalOutcome,
+    p_home_score: prediction.homeScore,
+    p_away_score: prediction.awayScore,
+    p_qualifier_team_id: prediction.qualifier,
+    p_qualification_method: prediction.qualificationMethod,
+    p_extra_home_score: prediction.extraHomeScore,
+    p_extra_away_score: prediction.extraAwayScore,
+    p_penalties_home: prediction.penaltiesHome,
+    p_penalties_away: prediction.penaltiesAway,
+  });
 
   if (error) throw error;
   return mapPrediction(data);

@@ -2,6 +2,7 @@ import { CalendarDays, Home, Trophy, UserRound, UsersRound } from "lucide-react"
 
 export const STORAGE = {
   profile: "copa-profile",
+  session: "copa-session",
   leagues: "copa-leagues",
   activeLeague: "copa-active-league",
   fixtures: "copa-fixtures",

@@ -42,6 +42,8 @@ import {
   createRemoteLeague,
   fetchRemoteState,
   joinRemoteLeague,
+  loginPlayer,
+  registerPlayer,
   saveRemotePrediction,
   upsertProfile,
 } from "./services/supabaseData";
@@ -68,8 +70,15 @@ function getInitialFixtures() {
 }
 
 function getInitialProfile() {
+  const storedSession = readStorage(STORAGE.session, null);
+  if (!storedSession) return null;
+
   const storedProfile = readStorage(STORAGE.profile, null);
   return storedProfile?.id === "user-demo" ? null : storedProfile;
+}
+
+function getInitialSessionToken() {
+  return readStorage(STORAGE.session, null);
 }
 
 function getInitialLeagues() {
@@ -97,11 +106,13 @@ function App() {
   const [fixtures, setFixtures] = useState(getInitialFixtures);
   const [predictions, setPredictions] = useState(getInitialPredictions);
   const [membersByLeague, setMembersByLeague] = useState({});
+  const [sessionToken, setSessionToken] = useState(getInitialSessionToken);
   const [syncState, setSyncState] = useState({ loading: false, message: "" });
   const [dataState, setDataState] = useState({ loading: false, message: "" });
   const [lastSync, setLastSync] = useState(() => readStorage(STORAGE.lastSync, null));
 
   useEffect(() => writeStorage(STORAGE.profile, profile), [profile]);
+  useEffect(() => writeStorage(STORAGE.session, sessionToken), [sessionToken]);
   useEffect(() => writeStorage(STORAGE.leagues, leagues), [leagues]);
   useEffect(() => writeStorage(STORAGE.activeLeague, activeLeagueId), [activeLeagueId]);
   useEffect(() => {
@@ -115,42 +126,18 @@ function App() {
   const currentUser = profile;
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase || profile) return undefined;
-
-    let cancelled = false;
-
-    async function restoreSession() {
-      const { data } = await supabase.auth.getUser();
-      if (cancelled || !data.user) return;
-
-      const name = data.user.user_metadata?.name || data.user.email?.split("@")[0] || "Jogador";
-      setProfile({
-        id: data.user.id,
-        name,
-        email: data.user.email || "",
-        avatar: name.slice(0, 2).toUpperCase(),
-      });
-    }
-
-    restoreSession();
-    return () => {
-      cancelled = true;
-    };
-  }, [profile]);
-
-  useEffect(() => {
-    if (!profile || !isSupabaseConfigured) return undefined;
+    if (!profile?.id || !sessionToken || !isSupabaseConfigured) return undefined;
 
     let cancelled = false;
 
     async function loadRemoteData() {
       setDataState({ loading: true, message: "Carregando suas ligas..." });
       try {
-        await upsertProfile(profile);
-        const remote = await fetchRemoteState();
+        const remote = await fetchRemoteState(sessionToken);
 
         if (cancelled) return;
 
+        setProfile(remote.profile);
         setLeagues(remote.leagues);
         setActiveLeagueId((current) =>
           remote.leagues.some((league) => league.id === current) ? current : remote.leagues[0]?.id || null,
@@ -173,7 +160,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [profile]);
+  }, [profile?.id, sessionToken]);
 
   const users = useMemo(() => {
     if (!currentUser || !activeLeague?.id) return [];
@@ -189,37 +176,23 @@ function App() {
   );
   const profileRank = ranking.find((item) => item.id === currentUser?.id);
 
-  async function handleSupabaseAuth(payload, mode) {
+  async function handlePlayerAuth(payload, mode) {
     if (!isSupabaseConfigured || !supabase) {
       throw new Error("Login indisponivel no momento.");
     }
 
-    if (!payload.email || !payload.password) {
-      throw new Error("Informe e-mail e senha.");
+    if (!payload.username || !payload.password) {
+      throw new Error("Informe usuario e senha.");
     }
 
-    const authCall =
-      mode === "register"
-        ? supabase.auth.signUp({
-            email: payload.email,
-            password: payload.password,
-            options: { data: { name: payload.name || payload.email.split("@")[0] } },
-          })
-        : supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
-
-    const { data, error } = await authCall;
-    if (error) throw error;
-    if (!data.session && mode === "register") {
-      throw new Error("Conta criada. Confirme seu e-mail para entrar.");
-    }
-
-    const name = payload.name || data.user?.email?.split("@")[0] || "Jogador";
-    setProfile({
-      id: data.user.id,
-      name,
-      email: data.user?.email || payload.email,
-      avatar: name.slice(0, 2).toUpperCase(),
-    });
+    const result = mode === "register" ? await registerPlayer(payload) : await loginPlayer(payload);
+    setSessionToken(result.sessionToken);
+    setProfile(result.profile);
+    setLeagues([]);
+    setActiveLeagueId(null);
+    setPredictions([]);
+    setMembersByLeague({});
+    setActiveTab("home");
   }
 
   async function savePrediction(fixture, form) {
@@ -261,7 +234,7 @@ function App() {
 
     if (isSupabaseConfigured) {
       try {
-        const saved = await saveRemotePrediction(nextPrediction);
+        const saved = await saveRemotePrediction(nextPrediction, sessionToken);
         setPredictions((items) =>
           items.map((item) => (item.id === nextPrediction.id ? saved : item)),
         );
@@ -284,7 +257,7 @@ function App() {
 
     setDataState({ loading: true, message: "Criando liga..." });
     try {
-      const league = await createRemoteLeague(name);
+      const league = await createRemoteLeague(name, sessionToken);
       setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
       setMembersByLeague((items) => ({ ...items, [league.id]: [currentUser] }));
       setActiveLeagueId(league.id);
@@ -306,7 +279,7 @@ function App() {
     }
 
     try {
-      const league = await joinRemoteLeague(normalized);
+      const league = await joinRemoteLeague(normalized, sessionToken);
       setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
       setMembersByLeague((items) => ({
         ...items,
@@ -365,23 +338,22 @@ function App() {
     if (!currentUser) return;
 
     const name = nextProfile.name?.trim() || currentUser.name || "Jogador";
-    const email = nextProfile.email?.trim() || "";
     const updatedProfile = {
       ...currentUser,
       name,
-      email,
       avatar: name.slice(0, 2).toUpperCase(),
+      displayNameSet: true,
     };
 
-    setProfile(updatedProfile);
-
     if (!isSupabaseConfigured) {
+      setProfile(updatedProfile);
       setDataState({ loading: false, message: "Perfil atualizado." });
       return;
     }
 
     try {
-      await upsertProfile(updatedProfile);
+      const savedProfile = await upsertProfile({ ...updatedProfile, sessionToken });
+      setProfile(savedProfile);
       setDataState({ loading: false, message: "Perfil atualizado." });
     } catch (error) {
       setDataState({
@@ -421,12 +393,16 @@ function App() {
   }, [handleSync, profile]);
 
   if (!profile) {
-    return <LoginScreen onSupabaseAuth={handleSupabaseAuth} />;
+    return <LoginScreen onPlayerAuth={handlePlayerAuth} />;
+  }
+
+  if (!profile.displayNameSet) {
+    return <DisplayNameScreen profile={profile} onSaveName={updateProfile} />;
   }
 
   async function handleLogout() {
-    if (supabase) await supabase.auth.signOut();
     setProfile(null);
+    setSessionToken(null);
     setLeagues([]);
     setActiveLeagueId(null);
     setPredictions([]);
@@ -517,9 +493,9 @@ function App() {
   );
 }
 
-function LoginScreen({ onSupabaseAuth }) {
+function LoginScreen({ onPlayerAuth }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ username: "", password: "" });
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -528,7 +504,7 @@ function LoginScreen({ onSupabaseAuth }) {
     setLoading(true);
     setMessage("");
     try {
-      await onSupabaseAuth(form, mode);
+      await onPlayerAuth(form, mode);
     } catch (error) {
       setMessage(error.message || "Nao foi possivel entrar.");
     } finally {
@@ -557,24 +533,13 @@ function LoginScreen({ onSupabaseAuth }) {
           </button>
         </div>
 
-        {mode === "register" && (
-          <label>
-            Nome
-            <input
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-              placeholder="Seu nome no ranking"
-            />
-          </label>
-        )}
-
         <label>
-          E-mail
+          Usuario
           <input
-            type="email"
-            value={form.email}
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
-            placeholder="voce@email.com"
+            autoComplete="username"
+            value={form.username}
+            onChange={(event) => setForm({ ...form, username: event.target.value })}
+            placeholder="Ex: jardel"
           />
         </label>
 
@@ -582,9 +547,10 @@ function LoginScreen({ onSupabaseAuth }) {
           Senha
           <input
             type="password"
+            autoComplete={mode === "register" ? "new-password" : "current-password"}
             value={form.password}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
-            placeholder="Sua senha"
+            placeholder="Senha"
           />
         </label>
 
@@ -597,9 +563,72 @@ function LoginScreen({ onSupabaseAuth }) {
 
         <p className="helper-text">
           {isSupabaseConfigured
-            ? "Cada jogador usa sua propria conta para manter ligas, ranking e palpites separados."
+            ? "Use usuario e senha para entrar. O nome do ranking voce escolhe depois."
             : "Login indisponivel no momento."}
         </p>
+      </form>
+    </main>
+  );
+}
+
+function DisplayNameScreen({ profile, onSaveName }) {
+  const [name, setName] = useState(profile.name || "");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!name.trim()) {
+      setMessage("Digite o nome que vai aparecer no jogo.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      await onSaveName({ name });
+    } catch (error) {
+      setMessage(error.message || "Nao foi possivel salvar seu nome.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <main className="login-page">
+      <section className="login-hero">
+        <img src="/world-cup-mark.svg" alt="" className="brand-mark" />
+        <span className="eyebrow">Perfil do jogador</span>
+        <h1>Como voce quer aparecer?</h1>
+        <p>Seu usuario e usado para entrar. Esse nome aparece para os amigos no ranking da liga.</p>
+      </section>
+
+      <form className="login-card" onSubmit={submit}>
+        <div className="profile-preview">
+          <div className="avatar profile-avatar-large">{profile.avatar}</div>
+          <div>
+            <strong>@{profile.username}</strong>
+            <small>Usuario de login</small>
+          </div>
+        </div>
+
+        <label>
+          Nome no jogo
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Ex: Jardel"
+          />
+        </label>
+
+        {message && <p className="form-message">{message}</p>}
+
+        <button className="primary-button" disabled={saving}>
+          {saving ? "Salvando..." : "Entrar no jogo"}
+          <ChevronRight size={18} />
+        </button>
       </form>
     </main>
   );
@@ -1348,15 +1377,15 @@ function ProfileView({
   syncState,
   userPredictions,
 }) {
-  const [draft, setDraft] = useState({ name: profile.name || "", email: profile.email || "" });
+  const [draft, setDraft] = useState({ name: profile.name || "" });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const canSeeActiveCode = activeLeague?.ownerId === profile.id;
 
   useEffect(() => {
-    setDraft({ name: profile.name || "", email: profile.email || "" });
+    setDraft({ name: profile.name || "" });
     setMessage("");
-  }, [profile.email, profile.id, profile.name]);
+  }, [profile.id, profile.name]);
 
   const statusMessage = syncState.loading
     ? "Atualizando partidas..."
@@ -1401,7 +1430,7 @@ function ProfileView({
             <div className="avatar profile-avatar-large">{profile.avatar}</div>
             <div>
               <strong>{profile.name}</strong>
-              <small>{profile.email || "Sem e-mail cadastrado"}</small>
+              <small>@{profile.username}</small>
             </div>
           </div>
 
@@ -1412,16 +1441,6 @@ function ProfileView({
                 value={draft.name}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 placeholder="Seu nome"
-              />
-            </label>
-
-            <label>
-              E-mail
-              <input
-                type="email"
-                value={draft.email}
-                onChange={(event) => setDraft({ ...draft, email: event.target.value })}
-                placeholder="voce@email.com"
               />
             </label>
 

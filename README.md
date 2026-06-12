@@ -6,7 +6,7 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 
 - React + Vite na raiz do repositorio.
 - Interface pensada primeiro para celular.
-- Login real por e-mail e senha.
+- Login simples por usuario e senha, sem confirmacao por e-mail.
 - Ligas com codigo de convite.
 - Calendario com 104 jogos salvos no app para garantir navegacao mesmo antes da API responder.
 - Palpite de fase de grupos: vencedor, empate e placar exato.
@@ -28,7 +28,7 @@ npm run dev
 
 Depois abra `http://127.0.0.1:5173`.
 
-Para usar varios jogadores reais, configure as variaveis do Supabase antes do deploy.
+Para usar varios jogadores reais, configure as variaveis do Supabase antes do deploy e rode o SQL atualizado.
 
 ## Variaveis de ambiente
 
@@ -90,6 +90,7 @@ No desenvolvimento local com `npm run dev`, a rota serverless da Vercel pode nao
 O arquivo `supabase/schema.sql` contem a estrutura inicial para:
 
 - perfis
+- sessoes de jogadores
 - ligas
 - participantes
 - selecoes
@@ -97,7 +98,7 @@ O arquivo `supabase/schema.sql` contem a estrutura inicial para:
 - palpites
 - configuracoes de pontuacao
 - logs de sincronizacao da API
-- funcoes RPC `create_league_with_owner` e `join_league_by_code`
+- funcoes RPC para cadastrar jogador, entrar, criar liga, entrar em liga e salvar palpite
 
 Para ativar:
 
