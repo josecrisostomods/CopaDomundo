@@ -54,7 +54,7 @@ export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
             autoComplete="username"
             value={form.username}
             onChange={(event) => setForm({ ...form, username: event.target.value })}
-            placeholder="Ex: jardel"
+            placeholder="Digite seu usuario"
           />
         </label>
 
