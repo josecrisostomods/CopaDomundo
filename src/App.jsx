@@ -14,6 +14,7 @@ function AppContent() {
     currentUser,
     activeTab,
     setActiveTab,
+    leagues,
     activeLeague,
     activeLeagueId,
     setActiveLeagueId,
