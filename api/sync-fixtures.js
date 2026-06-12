@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 const FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4";
 const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
 
-function getAdminClient() {
+function getServiceRoleClient() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -156,7 +156,7 @@ function fixtureToDbRow(fixture, provider) {
 }
 
 async function persistFixtures(fixtures, provider) {
-  const supabase = getAdminClient();
+  const supabase = getServiceRoleClient();
   if (!supabase) {
     return {
       persisted: false,

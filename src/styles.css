@@ -944,16 +944,71 @@ legend {
   color: var(--gold);
 }
 
+.profile-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 12px;
+}
+
+.profile-preview strong,
+.profile-preview small {
+  display: block;
+}
+
+.profile-preview small {
+  margin-top: 4px;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.profile-avatar-large {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+}
+
+.profile-form,
+.metric-list {
+  display: grid;
+  gap: 12px;
+}
+
+.metric-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 11px 12px;
+}
+
+.metric-list span {
+  color: var(--text-soft);
+  font-weight: 800;
+}
+
+.metric-list strong {
+  color: var(--gold);
+  font-size: 1.1rem;
+}
+
+.loading-text {
+  color: #b9ebff;
+}
+
 .rules-list {
   display: grid;
   gap: 9px;
   margin: 0;
   padding-left: 20px;
   color: var(--text-soft);
-}
-
-.admin-score {
-  align-items: end;
 }
 
 @media (min-width: 720px) {

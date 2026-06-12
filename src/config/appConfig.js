@@ -1,0 +1,29 @@
+import { CalendarDays, Home, Trophy, UserRound, UsersRound } from "lucide-react";
+
+export const STORAGE = {
+  profile: "copa-profile",
+  leagues: "copa-leagues",
+  activeLeague: "copa-active-league",
+  fixtures: "copa-fixtures",
+  fixturesVersion: "copa-fixtures-version",
+  lastSync: "copa-last-sync",
+  predictions: "copa-predictions",
+};
+
+export const FIXTURE_DATA_VERSION = "2026-pt-br-confirmed-results-v6";
+
+export const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+
+export const navItems = [
+  { id: "home", label: "Inicio", icon: Home },
+  { id: "games", label: "Jogos", icon: CalendarDays },
+  { id: "ranking", label: "Ranking", icon: Trophy },
+  { id: "league", label: "Liga", icon: UsersRound },
+  { id: "profile", label: "Perfil", icon: UserRound },
+];
+
+export const methodOptions = [
+  { id: "NORMAL_TIME", label: "Tempo normal" },
+  { id: "EXTRA_TIME", label: "Prorrogacao" },
+  { id: "PENALTIES", label: "Penaltis" },
+];

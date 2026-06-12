@@ -10,14 +10,14 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 - Ligas com codigo de convite.
 - Calendario com 104 jogos no fallback local.
 - Palpite de fase de grupos: vencedor, empate e placar exato.
-- Palpite de mata-mata: resultado nos 90 minutos, quem passa e se passa no tempo normal, prorrogacao ou penaltis.
+- Palpite de mata-mata: vencedor ou empate nos 90 minutos, quem passa e se passa no tempo normal, prorrogacao ou penaltis.
 - Ranking por liga com criterios de desempate.
-- Area admin para sincronizar API, editar placares, status, vencedor e forma de classificacao.
+- Tela de perfil para o usuario editar dados e acompanhar seu resumo na liga.
 - Funcao serverless `/api/sync-fixtures` para proteger a chave da API de futebol.
 - Persistencia no Supabase para perfil, ligas, membros, jogos e palpites quando as variaveis estiverem configuradas.
 - Escudos/logos das selecoes quando a API retornar imagem do time.
-- Atualizacao automatica dos resultados quando o site esta aberto.
-- Cron da Vercel chamando `/api/sync-fixtures` uma vez por dia no plano Hobby para gravar resultados no Supabase.
+- Atualizacao automatica das partidas quando o site esta aberto.
+- Cron da Vercel chamando `/api/sync-fixtures` uma vez por dia no plano Hobby para gravar placares no Supabase.
 
 ## Rodando localmente
 
@@ -68,9 +68,9 @@ Importante: chaves privadas ficam somente na Vercel, dentro da funcao serverless
 
 Quando `SUPABASE_SERVICE_ROLE_KEY` estiver configurada, a sincronizacao tambem grava selecoes e partidas nas tabelas `teams` e `fixtures`. Sem essa chave, a API ainda retorna os jogos para o frontend, mas nao persiste no banco.
 
-## Atualizacao automatica de resultados
+## Atualizacao automatica das partidas
 
-O site atualiza resultados de duas formas:
+O site atualiza partidas e placares de duas formas:
 
 1. **Enquanto alguem esta usando o site**
    - O frontend chama `/api/sync-fixtures` ao entrar.
@@ -81,7 +81,7 @@ O site atualiza resultados de duas formas:
    - O `vercel.json` tem um cron em `/api/sync-fixtures`.
    - No plano Hobby da Vercel, a chamada roda uma vez por dia.
    - Enquanto alguem estiver usando o site, o frontend ainda tenta atualizar a cada 5 minutos.
-   - Com `API_FOOTBALL_KEY` e `SUPABASE_SERVICE_ROLE_KEY`, os placares atualizados ficam salvos no Supabase.
+   - Com `API_FOOTBALL_KEY` e `SUPABASE_SERVICE_ROLE_KEY`, os placares novos ficam salvos no Supabase.
 
 No desenvolvimento local com `npm run dev`, a rota serverless da Vercel pode nao estar ativa. Nesse caso, a atualizacao automatica real acontece depois do deploy na Vercel ou usando `vercel dev`.
 
@@ -136,7 +136,7 @@ Fase de grupos:
 
 Mata-mata:
 
-- Acertou resultado dos 90 minutos: 3 pontos.
+- Acertou vencedor ou empate nos 90 minutos: 3 pontos.
 - Acertou placar exato dos 90 minutos: +2 pontos.
 - Acertou quem passa de fase: +2 pontos.
 - Acertou forma de classificacao: +2 pontos.
@@ -153,10 +153,12 @@ Desempate:
 ```text
 api/sync-fixtures.js        Funcao serverless para buscar jogos da API
 src/App.jsx                Telas e fluxo do produto
+src/config/appConfig.js    Configuracoes de navegacao e armazenamento local
 src/data/mockWorldCup.js   Fallback local com calendario completo
 src/lib/scoring.js         Regras de pontuacao e ranking
 src/lib/supabase.js        Cliente Supabase opcional
 src/styles.css             Visual mobile-first
+src/utils/formatters.js    Formatadores de datas, horarios e rotulos
 supabase/schema.sql        Banco de dados
 ```
 
@@ -165,4 +167,4 @@ supabase/schema.sql        Banco de dados
 - Use sempre a palavra **palpite**, nao aposta.
 - O app nao e PWA e nao precisa ser instalado no celular.
 - A prioridade e funcionar muito bem no navegador mobile.
-- Se a API nao trouxer prorrogacao ou penaltis, complete esses campos pelo admin.
+- Se a API nao trouxer prorrogacao ou penaltis, esses campos ficam como `A definir` ate a sincronizacao trazer dados completos.

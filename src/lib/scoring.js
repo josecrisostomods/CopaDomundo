@@ -5,6 +5,8 @@ export const DEFAULT_SCORING = {
   qualificationMethod: 2,
 };
 
+const OUTCOME_DETAIL_LABEL = "Vencedor/empate";
+
 export function getNormalOutcome(homeScore, awayScore) {
   if (homeScore === null || awayScore === null || homeScore === undefined || awayScore === undefined) {
     return null;
@@ -32,7 +34,7 @@ export function scorePrediction(fixture, prediction, scoring = DEFAULT_SCORING) 
 
   if (prediction.normalOutcome === actualOutcome) {
     total += scoring.outcome;
-    details.push({ label: "Resultado", points: scoring.outcome });
+    details.push({ label: OUTCOME_DETAIL_LABEL, points: scoring.outcome });
   }
 
   if (
@@ -71,7 +73,7 @@ export function buildRanking(users, fixtures, predictions, scoring = DEFAULT_SCO
           const result = fixture ? scorePrediction(fixture, prediction, scoring) : { total: 0, details: [] };
           acc.points += result.total;
           acc.predictions += 1;
-          if (result.details.some((detail) => detail.label === "Resultado")) acc.outcomes += 1;
+          if (result.details.some((detail) => detail.label === OUTCOME_DETAIL_LABEL)) acc.outcomes += 1;
           if (result.details.some((detail) => detail.label === "Placar exato")) acc.exacts += 1;
           if (result.details.some((detail) => detail.label === "Classificado")) acc.knockout += 1;
           return acc;

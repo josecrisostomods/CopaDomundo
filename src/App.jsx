@@ -4,22 +4,28 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardList,
-  Cloud,
   Crown,
   Edit3,
   Gauge,
-  Home,
   Link2,
   ListChecks,
   Lock,
+  LogOut,
   Medal,
-  RefreshCw,
+  Save,
   Search,
-  Settings,
   ShieldCheck,
   Trophy,
+  UserRound,
   UsersRound,
 } from "lucide-react";
+import {
+  AUTO_SYNC_INTERVAL_MS,
+  FIXTURE_DATA_VERSION,
+  STORAGE,
+  methodOptions,
+  navItems,
+} from "./config/appConfig";
 import {
   DEMO_LEAGUE,
   DEMO_PREDICTIONS,
@@ -31,7 +37,6 @@ import { makeId, readStorage, writeStorage } from "./lib/storage";
 import {
   DEFAULT_SCORING,
   buildRanking,
-  getNormalOutcome,
   isFixtureClosed,
   scorePrediction,
 } from "./lib/scoring";
@@ -43,33 +48,13 @@ import {
   saveRemotePrediction,
   upsertProfile,
 } from "./services/supabaseData";
-
-const STORAGE = {
-  profile: "copa-profile",
-  leagues: "copa-leagues",
-  activeLeague: "copa-active-league",
-  fixtures: "copa-fixtures",
-  fixturesVersion: "copa-fixtures-version",
-  lastSync: "copa-last-sync",
-  predictions: "copa-predictions",
-};
-
-const FIXTURE_DATA_VERSION = "2026-pt-br-confirmed-results-v6";
-const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-
-const navItems = [
-  { id: "home", label: "Inicio", icon: Home },
-  { id: "games", label: "Jogos", icon: CalendarDays },
-  { id: "ranking", label: "Ranking", icon: Trophy },
-  { id: "league", label: "Liga", icon: UsersRound },
-  { id: "admin", label: "Admin", icon: Settings },
-];
-
-const methodOptions = [
-  { id: "NORMAL_TIME", label: "Tempo normal" },
-  { id: "EXTRA_TIME", label: "Prorrogacao" },
-  { id: "PENALTIES", label: "Penaltis" },
-];
+import {
+  formatDate,
+  formatTime,
+  methodLabel,
+  outcomeLabel,
+  statusLabel,
+} from "./utils/formatters";
 
 function getInitialFixtures() {
   const storedVersion = readStorage(STORAGE.fixturesVersion, null);
@@ -83,51 +68,6 @@ function getInitialFixtures() {
   );
 
   return hasOpenScheduledGame ? storedFixtures : MOCK_FIXTURES;
-}
-
-function formatDate(dateString) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    weekday: "short",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(dateString));
-}
-
-function formatTime(dateString) {
-  if (!dateString) return "Pendente";
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(dateString));
-}
-
-function statusLabel(status) {
-  const labels = {
-    SCHEDULED: "Aberto",
-    LIVE: "Ao vivo",
-    FINISHED: "Finalizado",
-    POSTPONED: "Adiado",
-    CANCELLED: "Cancelado",
-  };
-
-  return labels[status] || status;
-}
-
-function outcomeLabel(outcome, fixture) {
-  const labels = {
-    HOME: fixture?.home?.name || "Time A",
-    DRAW: "Empate",
-    AWAY: fixture?.away?.name || "Time B",
-  };
-
-  return labels[outcome] || "Sem palpite";
-}
-
-function methodLabel(method) {
-  return methodOptions.find((item) => item.id === method)?.label || "A definir";
 }
 
 function App() {
@@ -380,7 +320,7 @@ function App() {
       setSyncState({
         loading: false,
         message: automatic
-          ? `Resultados atualizados automaticamente as ${formatTime(syncedAt)}.`
+          ? `Partidas atualizadas automaticamente as ${formatTime(syncedAt)}.`
           : `${payload.fixtures.length} jogos importados de ${payload.provider}.`,
       });
     } catch (error) {
@@ -393,8 +333,32 @@ function App() {
     }
   }, []);
 
-  function updateFixture(nextFixture) {
-    setFixtures((items) => items.map((fixture) => (fixture.id === nextFixture.id ? nextFixture : fixture)));
+  async function updateProfile(nextProfile) {
+    const name = nextProfile.name?.trim() || currentUser.name || "Jogador";
+    const email = nextProfile.email?.trim() || "";
+    const updatedProfile = {
+      ...currentUser,
+      name,
+      email,
+      avatar: name.slice(0, 2).toUpperCase(),
+    };
+
+    setProfile(updatedProfile);
+
+    if (!isSupabaseConfigured) {
+      setDataState({ loading: false, message: "Perfil atualizado neste navegador." });
+      return;
+    }
+
+    try {
+      await upsertProfile(updatedProfile);
+      setDataState({ loading: false, message: "Perfil atualizado no Supabase." });
+    } catch (error) {
+      setDataState({
+        loading: false,
+        message: `${error.message} O perfil ficou atualizado neste navegador.`,
+      });
+    }
   }
 
   useEffect(() => {
@@ -484,12 +448,17 @@ function App() {
           />
         )}
 
-        {activeTab === "admin" && (
-          <AdminView
-            fixtures={fixtures}
-            onSync={handleSync}
-            onUpdateFixture={updateFixture}
+        {activeTab === "profile" && (
+          <ProfileView
+            activeLeague={activeLeague}
+            dataState={dataState}
+            lastSync={lastSync}
+            onLogout={() => setProfile(null)}
+            onUpdateProfile={updateProfile}
+            profile={currentUser}
+            profileRank={profileRank}
             syncState={syncState}
+            userPredictions={userPredictions}
           />
         )}
       </main>
@@ -591,7 +560,7 @@ function LoginScreen({ onLocalLogin, onSupabaseAuth }) {
 
 function Header({ activeTab, activeLeague, dataState, lastSync, profile, setActiveTab, syncState, onLogout }) {
   const statusMessage = syncState.loading
-    ? "Atualizando resultados..."
+    ? "Atualizando partidas..."
     : syncState.message || dataState.message || `Atualizado: ${formatTime(lastSync)}`;
 
   return (
@@ -685,7 +654,7 @@ function Dashboard({
         <StatCard icon={Crown} label="Sua posicao" value={`#${profileRank?.position || "-"}`} hint={`${profileRank?.points || 0} pts`} />
         <StatCard icon={ClipboardList} label="Palpites feitos" value={userPredictions.length} hint={`${pending} pendentes`} />
         <StatCard icon={CheckCircle2} label="Jogos fechados" value={finished} hint={`${fixtures.length} no calendario`} />
-        <StatCard icon={Gauge} label="Atualizacao" value={formatTime(lastSync)} hint={syncState.loading ? "buscando resultados" : "automatica"} />
+        <StatCard icon={Gauge} label="Atualizacao" value={formatTime(lastSync)} hint={syncState.loading ? "buscando partidas" : "automatica"} />
       </div>
 
       <div className="two-column">
@@ -770,7 +739,7 @@ function GamesView({ fixtures, predictions, onSavePrediction }) {
         <div className="segmented">
           {[
             ["open", "Abertos"],
-            ["results", "Resultados"],
+            ["results", "Finalizados"],
             ["all", "Todos"],
             ["mine", "Meus"],
             ["knockout", "Mata-mata"],
@@ -797,7 +766,7 @@ function GamesView({ fixtures, predictions, onSavePrediction }) {
         <div className="empty-state">
           <CalendarDays size={24} />
           <strong>Nenhum jogo neste filtro</strong>
-          <span>Use o filtro Todos ou sincronize a API no Admin para carregar novas partidas.</span>
+          <span>Use o filtro Todos ou aguarde a atualizacao automatica para carregar novas partidas.</span>
         </div>
       )}
     </section>
@@ -839,7 +808,7 @@ function FixtureCard({ fixture, prediction, onSavePrediction }) {
               {fixture.home.name} {prediction.homeScore} x {prediction.awayScore} {fixture.away.name}
             </span>
             <small>
-              Resultado: {outcomeLabel(prediction.normalOutcome, fixture)}
+              Escolha: {outcomeLabel(prediction.normalOutcome, fixture)}
               {fixture.stageType === "KNOCKOUT" && ` · passa ${teamNameById(fixture, prediction.qualifier)} por ${methodLabel(prediction.qualificationMethod).toLowerCase()}`}
             </small>
           </div>
@@ -990,7 +959,7 @@ function PredictionForm({ fixture, prediction, closed, onSubmit }) {
       }}
     >
       <fieldset disabled={closed}>
-        <legend>Resultado nos 90 minutos</legend>
+        <legend>Palpite nos 90 minutos</legend>
         <div className="choice-grid">
           {[
             ["HOME", fixture.home.name],
@@ -1114,7 +1083,7 @@ function PredictionForm({ fixture, prediction, closed, onSubmit }) {
 
       {closed && <p className="form-message">Palpite bloqueado porque o jogo ja comecou ou terminou.</p>}
       {!closed && !form.normalOutcome && (
-        <p className="form-message">Digite o placar ou toque em uma opcao de resultado para liberar o palpite.</p>
+        <p className="form-message">Digite o placar ou toque em uma opcao do jogo para liberar o palpite.</p>
       )}
       {form.normalOutcome === "DRAW" && form.qualificationMethod === "NORMAL_TIME" && (
         <p className="form-message">Em empate no mata-mata, escolha prorrogacao ou penaltis.</p>
@@ -1267,140 +1236,138 @@ function LeagueView({ activeLeague, leagues, onCreateLeague, onJoinLeague, onSel
   );
 }
 
-function AdminView({ fixtures, onSync, onUpdateFixture, syncState }) {
-  const [provider, setProvider] = useState("api-football");
-  const [selectedId, setSelectedId] = useState(fixtures[0]?.id || "");
-  const selectedFixture = fixtures.find((fixture) => fixture.id === selectedId) || fixtures[0];
-  const [draft, setDraft] = useState(selectedFixture);
+function ProfileView({
+  activeLeague,
+  dataState,
+  lastSync,
+  onLogout,
+  onUpdateProfile,
+  profile,
+  profileRank,
+  syncState,
+  userPredictions,
+}) {
+  const [draft, setDraft] = useState({ name: profile.name || "", email: profile.email || "" });
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setDraft(selectedFixture);
-  }, [selectedFixture]);
+    setDraft({ name: profile.name || "", email: profile.email || "" });
+    setMessage("");
+  }, [profile.email, profile.id, profile.name]);
 
-  if (!draft) return null;
+  const statusMessage = syncState.loading
+    ? "Atualizando partidas..."
+    : dataState.message || syncState.message || `Ultima atualizacao: ${formatTime(lastSync)}`;
 
-  function updateScore(field, value) {
-    const next = { ...draft, [field]: value === "" ? null : Number(value) };
-    const outcome = getNormalOutcome(next.homeScore, next.awayScore);
-    if (outcome === "HOME") next.winner = next.home.id;
-    if (outcome === "AWAY") next.winner = next.away.id;
-    if (outcome === "DRAW" && next.stageType === "GROUP") next.winner = null;
-    setDraft(next);
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+
+    try {
+      await onUpdateProfile(draft);
+      setMessage("Perfil salvo.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <section className="screen-stack">
       <ScreenHeading
-        icon={Settings}
-        title="Admin"
-        subtitle="Sincronize a API, corrija placares e complete dados de prorrogação ou penaltis."
+        icon={UserRound}
+        title="Perfil"
+        subtitle="Edite seus dados e acompanhe seu desempenho na liga ativa."
       />
+
+      <div className="stats-grid">
+        <StatCard icon={Crown} label="Sua posicao" value={`#${profileRank?.position || "-"}`} hint={`${profileRank?.points || 0} pts`} />
+        <StatCard icon={ClipboardList} label="Palpites feitos" value={userPredictions.length} hint="nesta liga" />
+        <StatCard icon={CheckCircle2} label="Placares exatos" value={profileRank?.exacts || 0} hint="criterio de desempate" />
+        <StatCard icon={ShieldCheck} label="Mata-mata" value={profileRank?.knockout || 0} hint="classificados certos" />
+      </div>
 
       <div className="two-column">
         <section className="panel form-panel">
           <div className="panel-title">
-            <Cloud size={20} />
-            <h2>Sincronizar API</h2>
+            <UserRound size={20} />
+            <h2>Dados do jogador</h2>
           </div>
-          <label>
-            Provedor
-            <select value={provider} onChange={(event) => setProvider(event.target.value)}>
-              <option value="api-football">API-Football recomendada</option>
-              <option value="football-data">football-data.org</option>
-            </select>
-          </label>
-          <button className="primary-button full" onClick={() => onSync(provider)} disabled={syncState.loading}>
-            {syncState.loading ? "Sincronizando..." : "Buscar jogos"}
-            <RefreshCw size={18} />
-          </button>
-          {syncState.message && <p className="form-message">{syncState.message}</p>}
+
+          <div className="profile-preview">
+            <div className="avatar profile-avatar-large">{profile.avatar}</div>
+            <div>
+              <strong>{profile.name}</strong>
+              <small>{profile.email || "Sem e-mail cadastrado"}</small>
+            </div>
+          </div>
+
+          <form className="profile-form" onSubmit={submit}>
+            <label>
+              Nome no ranking
+              <input
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                placeholder="Seu nome"
+              />
+            </label>
+
+            <label>
+              E-mail
+              <input
+                type="email"
+                value={draft.email}
+                onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+                placeholder="voce@email.com"
+              />
+            </label>
+
+            {message && <p className="form-message">{message}</p>}
+
+            <button className="primary-button full" disabled={saving}>
+              {saving ? "Salvando..." : "Salvar perfil"}
+              <Save size={18} />
+            </button>
+          </form>
         </section>
 
-        <section className="panel">
+        <section className="panel form-panel">
           <div className="panel-title">
-            <ShieldCheck size={20} />
-            <h2>Regras</h2>
+            <Trophy size={20} />
+            <h2>Resumo da liga</h2>
           </div>
-          <ul className="rules-list">
-            <li>Resultado nos 90 minutos: 3 pts</li>
-            <li>Placar exato: +2 pts</li>
-            <li>Classificado no mata-mata: +2 pts</li>
-            <li>Forma de classificacao: +2 pts</li>
-          </ul>
+
+          <div className="league-code">
+            <span>{activeLeague?.name || "Liga ativa"}</span>
+            <strong>{activeLeague?.code || "----"}</strong>
+          </div>
+
+          <div className="metric-list">
+            <div>
+              <span>Pontos</span>
+              <strong>{profileRank?.points || 0}</strong>
+            </div>
+            <div>
+              <span>Acertos simples</span>
+              <strong>{profileRank?.outcomes || 0}</strong>
+            </div>
+            <div>
+              <span>Palpites enviados</span>
+              <strong>{userPredictions.length}</strong>
+            </div>
+          </div>
+
+          <p className={`form-message ${dataState.loading || syncState.loading ? "loading-text" : ""}`}>
+            {statusMessage}
+          </p>
+
+          <button className="secondary-button full" onClick={onLogout}>
+            Sair da conta
+            <LogOut size={18} />
+          </button>
         </section>
       </div>
-
-      <section className="panel form-panel">
-        <div className="panel-title">
-          <Edit3 size={20} />
-          <h2>Editar partida</h2>
-        </div>
-
-        <label>
-          Jogo
-          <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
-            {fixtures.map((fixture) => (
-              <option key={fixture.id} value={fixture.id}>
-                {fixture.phase} · {fixture.home.name} x {fixture.away.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className="score-inputs admin-score">
-          <label>
-            {draft.home.name}
-            <input type="number" min="0" value={draft.homeScore ?? ""} onChange={(event) => updateScore("homeScore", event.target.value)} />
-          </label>
-          <span>x</span>
-          <label>
-            {draft.away.name}
-            <input type="number" min="0" value={draft.awayScore ?? ""} onChange={(event) => updateScore("awayScore", event.target.value)} />
-          </label>
-        </div>
-
-        <div className="optional-grid">
-          <label>
-            Status
-            <select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value })}>
-              <option value="SCHEDULED">Aberto</option>
-              <option value="LIVE">Ao vivo</option>
-              <option value="FINISHED">Finalizado</option>
-              <option value="POSTPONED">Adiado</option>
-              <option value="CANCELLED">Cancelado</option>
-            </select>
-          </label>
-          <label>
-            Classificado
-            <select value={draft.winner || ""} onChange={(event) => setDraft({ ...draft, winner: event.target.value || null })}>
-              <option value="">Sem vencedor</option>
-              <option value={draft.home.id}>{draft.home.name}</option>
-              <option value={draft.away.id}>{draft.away.name}</option>
-            </select>
-          </label>
-          <label>
-            Forma
-            <select
-              value={draft.classificationMethod || ""}
-              onChange={(event) => setDraft({ ...draft, classificationMethod: event.target.value || null })}
-            >
-              <option value="">A definir</option>
-              {methodOptions.map((method) => (
-                <option key={method.id} value={method.id}>{method.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Local
-            <input value={draft.venue} onChange={(event) => setDraft({ ...draft, venue: event.target.value })} />
-          </label>
-        </div>
-
-        <button className="primary-button full" onClick={() => onUpdateFixture(draft)}>
-          Salvar resultado
-          <ShieldCheck size={18} />
-        </button>
-      </section>
     </section>
   );
 }
