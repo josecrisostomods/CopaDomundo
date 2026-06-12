@@ -110,6 +110,16 @@ export async function registerPlayer({ username, password }) {
   return mapAuthPayload(data);
 }
 
+export async function logoutPlayer(sessionToken) {
+  if (!supabase || !sessionToken) return;
+
+  try {
+    await supabase.rpc("logout_player", { session_token: sessionToken });
+  } catch {
+    // Falha silenciosa — mesmo se o servidor não responder, o logout local continua
+  }
+}
+
 export async function loginPlayer({ username, password }) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 

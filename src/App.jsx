@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
+  Copy,
   Crown,
   Edit3,
   Gauge,
+  Home,
   Link2,
   ListChecks,
   Lock,
@@ -14,6 +16,7 @@ import {
   Medal,
   Save,
   Search,
+  Share2,
   ShieldCheck,
   Trophy,
   UserRound,
@@ -26,6 +29,7 @@ import {
   methodOptions,
   navItems,
 } from "./config/appConfig";
+import { useToast } from "./components/Toast.jsx";
 import {
   MOCK_FIXTURES,
 } from "./data/mockWorldCup";
@@ -43,6 +47,7 @@ import {
   fetchRemoteState,
   joinRemoteLeague,
   loginPlayer,
+  logoutPlayer,
   registerPlayer,
   saveRemotePrediction,
   upsertProfile,
@@ -99,6 +104,7 @@ function getInitialPredictions() {
 }
 
 function App() {
+  const addToast = useToast();
   const [profile, setProfile] = useState(getInitialProfile);
   const [activeTab, setActiveTab] = useState("home");
   const [leagues, setLeagues] = useState(getInitialLeagues);
@@ -171,8 +177,8 @@ function App() {
   const leaguePredictions = predictions.filter((prediction) => prediction.leagueId === activeLeague?.id);
   const userPredictions = leaguePredictions.filter((prediction) => prediction.userId === currentUser?.id);
   const ranking = useMemo(
-    () => buildRanking(users, fixtures, leaguePredictions, DEFAULT_SCORING),
-    [users, fixtures, leaguePredictions],
+    () => buildRanking(users, fixtures, leaguePredictions, activeLeague?.settings || DEFAULT_SCORING),
+    [users, fixtures, leaguePredictions, activeLeague?.settings],
   );
   const profileRank = ranking.find((item) => item.id === currentUser?.id);
 
@@ -197,7 +203,7 @@ function App() {
 
   async function savePrediction(fixture, form) {
     if (!activeLeague || !currentUser) {
-      setDataState({ loading: false, message: "Entre em uma liga antes de enviar palpites." });
+      addToast("Entre em uma liga antes de enviar palpites.", "error");
       return;
     }
 
@@ -238,20 +244,17 @@ function App() {
         setPredictions((items) =>
           items.map((item) => (item.id === nextPrediction.id ? saved : item)),
         );
-        setDataState({ loading: false, message: "Palpite salvo." });
+        addToast("Palpite salvo com sucesso!", "success");
       } catch (error) {
         setPredictions(previousPredictions);
-        setDataState({
-          loading: false,
-          message: `${error.message} Nao foi possivel salvar o palpite.`,
-        });
+        addToast(error.message || "Erro ao salvar palpite", "error");
       }
     }
   }
 
   async function createLeague(name) {
     if (!isSupabaseConfigured || !currentUser) {
-      setDataState({ loading: false, message: "Nao foi possivel criar liga agora." });
+      addToast("Nao foi possivel criar liga agora.", "error");
       return;
     }
 
@@ -262,8 +265,10 @@ function App() {
       setMembersByLeague((items) => ({ ...items, [league.id]: [currentUser] }));
       setActiveLeagueId(league.id);
       setActiveTab("league");
+      addToast("Liga criada com sucesso!", "success");
       setDataState({ loading: false, message: "Liga criada." });
     } catch (error) {
+      addToast(error.message || "Erro ao criar liga", "error");
       setDataState({
         loading: false,
         message: `${error.message} Nao foi possivel criar a liga.`,
@@ -288,14 +293,16 @@ function App() {
           : [currentUser, ...(items[league.id] || [])],
       }));
       setActiveLeagueId(league.id);
+      addToast(`Entrou na liga ${league.name}!`, "success");
       setDataState({ loading: false, message: "Voce entrou na liga." });
       return "Voce entrou na liga.";
     } catch (error) {
+      addToast(error.message || "Codigo invalido", "error");
       setDataState({
         loading: false,
         message: `${error.message} Nao foi possivel entrar na liga.`,
       });
-      return error.message || "Nao foi possivel entrar na liga.";
+      return error.message;
     }
   }
 
@@ -334,31 +341,19 @@ function App() {
     }
   }, []);
 
-  async function updateProfile(nextProfile) {
+  async function updateProfile(draft) {
     if (!currentUser) return;
-
-    const name = nextProfile.name?.trim() || currentUser.name || "Jogador";
-    const updatedProfile = {
-      ...currentUser,
-      name,
-      avatar: name.slice(0, 2).toUpperCase(),
-      displayNameSet: true,
-    };
-
-    if (!isSupabaseConfigured) {
-      setProfile(updatedProfile);
-      setDataState({ loading: false, message: "Perfil atualizado." });
-      return;
-    }
-
+    setDataState({ loading: true, message: "Salvando perfil..." });
     try {
-      const savedProfile = await upsertProfile({ ...updatedProfile, sessionToken });
-      setProfile(savedProfile);
-      setDataState({ loading: false, message: "Perfil atualizado." });
+      const saved = await upsertProfile(draft, sessionToken);
+      setProfile((prev) => ({ ...prev, ...saved }));
+      addToast("Perfil salvo com sucesso!", "success");
+      setDataState({ loading: false, message: "Perfil salvo." });
     } catch (error) {
+      addToast(error.message || "Erro ao salvar perfil", "error");
       setDataState({
         loading: false,
-        message: `${error.message} Nao foi possivel sincronizar o perfil.`,
+        message: `${error.message} Nao foi possivel salvar o perfil.`,
       });
     }
   }
@@ -401,6 +396,7 @@ function App() {
   }
 
   async function handleLogout() {
+    await logoutPlayer(sessionToken);
     setProfile(null);
     setSessionToken(null);
     setLeagues([]);
@@ -443,6 +439,8 @@ function App() {
               fixtures={fixtures}
               predictions={userPredictions}
               onSavePrediction={savePrediction}
+              loading={dataState.loading && fixtures.length === 0}
+              settings={activeLeague.settings}
             />
           ) : (
             <LeagueRequired setActiveTab={setActiveTab} />
@@ -786,7 +784,7 @@ function StatCard({ icon: Icon, label, value, hint }) {
   );
 }
 
-function GamesView({ fixtures, predictions, onSavePrediction }) {
+function GamesView({ fixtures, predictions, onSavePrediction, loading, settings }) {
   const [filter, setFilter] = useState("open");
   const [query, setQuery] = useState("");
 
@@ -833,17 +831,22 @@ function GamesView({ fixtures, predictions, onSavePrediction }) {
       </div>
 
       <div className="fixture-grid">
-        {filteredFixtures.map((fixture) => (
-          <FixtureCard
-            key={fixture.id}
-            fixture={fixture}
-            prediction={predictions.find((item) => item.fixtureId === fixture.id)}
-            onSavePrediction={onSavePrediction}
-          />
-        ))}
+        {loading ? (
+          Array.from({ length: 6 }).map((_, i) => <FixtureSkeleton key={i} />)
+        ) : (
+          filteredFixtures.map((fixture) => (
+            <FixtureCard
+              key={fixture.id}
+              fixture={fixture}
+              prediction={predictions.find((item) => item.fixtureId === fixture.id)}
+              onSavePrediction={onSavePrediction}
+              settings={settings}
+            />
+          ))
+        )}
       </div>
 
-      {!filteredFixtures.length && (
+      {!loading && !filteredFixtures.length && (
         <div className="empty-state">
           <CalendarDays size={24} />
           <strong>Nenhum jogo neste filtro</strong>
@@ -854,10 +857,56 @@ function GamesView({ fixtures, predictions, onSavePrediction }) {
   );
 }
 
-function FixtureCard({ fixture, prediction, onSavePrediction }) {
+function FixtureSkeleton() {
+  return (
+    <article className="fixture-card skeleton-card">
+      <div className="skeleton-line" style={{ width: "60%" }}></div>
+      <div className="matchup" style={{ marginTop: "12px", marginBottom: "12px" }}>
+        <div className="skeleton-circle"></div>
+        <div className="skeleton-box" style={{ width: "78px", height: "46px" }}></div>
+        <div className="skeleton-circle"></div>
+      </div>
+      <div className="skeleton-line" style={{ height: "48px", width: "100%", borderRadius: "8px" }}></div>
+    </article>
+  );
+}
+
+function useCountdown(targetDate) {
+  const [timeLeft, setTimeLeft] = useState("");
+
+  useEffect(() => {
+    function update() {
+      const now = Date.now();
+      const target = new Date(targetDate).getTime();
+      const diff = target - now;
+
+      if (diff <= 0) {
+        setTimeLeft("");
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / 1000 / 60) % 60);
+
+      if (days > 0) setTimeLeft(`Fecha em ${days}d ${hours}h`);
+      else if (hours > 0) setTimeLeft(`Fecha em ${hours}h ${minutes}m`);
+      else setTimeLeft(`Fecha em ${minutes}m`);
+    }
+
+    update();
+    const interval = setInterval(update, 60000);
+    return () => clearInterval(interval);
+  }, [targetDate]);
+
+  return timeLeft;
+}
+
+function FixtureCard({ fixture, prediction, onSavePrediction, settings }) {
   const [expanded, setExpanded] = useState(false);
   const closed = isFixtureClosed(fixture);
-  const result = scorePrediction(fixture, prediction);
+  const result = scorePrediction(fixture, prediction, settings || DEFAULT_SCORING);
+  const countdown = useCountdown(fixture.kickoff);
 
   return (
     <article className="fixture-card">
@@ -908,7 +957,10 @@ function FixtureCard({ fixture, prediction, onSavePrediction }) {
         disabled={closed && !prediction}
       >
         {closed ? <Lock size={17} /> : <Edit3 size={17} />}
-        {expanded ? "Fechar" : prediction ? "Editar palpite" : "Fazer palpite"}
+        <span style={{ flex: 1, textAlign: "center" }}>
+          {expanded ? "Fechar" : prediction ? "Editar palpite" : "Fazer palpite"}
+        </span>
+        {!closed && !expanded && countdown && <span className="countdown-pill">{countdown}</span>}
       </button>
 
       {expanded && (
@@ -1239,6 +1291,7 @@ function LeagueRequired({ setActiveTab }) {
 }
 
 function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague, onJoinLeague, onSelectLeague }) {
+  const addToast = useToast();
   const [newLeagueName, setNewLeagueName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [message, setMessage] = useState("");
@@ -1255,6 +1308,18 @@ function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague, onJoin
     } finally {
       setJoining(false);
     }
+  }
+
+  function copyCode() {
+    if (!activeLeague?.code) return;
+    navigator.clipboard.writeText(activeLeague.code);
+    addToast("Codigo copiado!", "success");
+  }
+
+  function shareWhatsApp() {
+    if (!activeLeague?.code) return;
+    const text = `Vem pro meu bolao da Copa! O codigo da liga '${activeLeague.name}' e: ${activeLeague.code}`;
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
   }
 
   return (
@@ -1282,6 +1347,16 @@ function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague, onJoin
                   ? "Compartilhe esse codigo com seus amigos para todos disputarem o mesmo ranking."
                   : "O codigo de convite fica visivel apenas para quem criou a liga."}
               </p>
+              {canSeeActiveCode && activeLeague.code && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "12px" }}>
+                  <button className="secondary-button full" onClick={copyCode}>
+                    <Copy size={16} /> Copiar
+                  </button>
+                  <button className="secondary-button full" onClick={shareWhatsApp} style={{ borderColor: "#17b890", color: "#17b890" }}>
+                    <Share2 size={16} /> WhatsApp
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <div className="empty-state compact">

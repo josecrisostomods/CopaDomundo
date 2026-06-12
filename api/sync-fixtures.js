@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4";
 const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
+const SYNC_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutos entre chamadas à API externa
 
 function getServiceRoleClient() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -345,6 +346,71 @@ export default async function handler(request, response) {
 
   try {
     const provider = request.query.provider || "api-football";
+    const forceSync = request.query.force === "true";
+
+    // Verificar último sync no banco para evitar chamadas excessivas à API externa
+    if (!forceSync) {
+      const supabase = getServiceRoleClient();
+      if (supabase) {
+        const { data: lastLog } = await supabase
+          .from("api_sync_logs")
+          .select("created_at")
+          .eq("status", "success")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (lastLog) {
+          const elapsed = Date.now() - new Date(lastLog.created_at).getTime();
+          if (elapsed < SYNC_COOLDOWN_MS) {
+            // Dentro do cooldown — retornar fixtures do banco
+            const { data: dbFixtures } = await supabase
+              .from("fixtures")
+              .select("*")
+              .order("kickoff", { ascending: true });
+
+            const { data: dbTeams } = await supabase
+              .from("teams")
+              .select("*");
+
+            if (dbFixtures?.length) {
+              const teamMap = new Map((dbTeams || []).map((t) => [t.id, t]));
+              const fixtures = dbFixtures.map((row) => {
+                const home = teamMap.get(row.home_team_id) || { id: row.home_team_id, name: "Time A", flag: "FIFA", crest_url: null };
+                const away = teamMap.get(row.away_team_id) || { id: row.away_team_id, name: "Time B", flag: "FIFA", crest_url: null };
+                return {
+                  id: row.id,
+                  apiId: row.api_id,
+                  group: row.group_name,
+                  round: row.round,
+                  phase: row.phase,
+                  stageType: row.stage_type,
+                  venue: row.venue || "A definir",
+                  kickoff: row.kickoff,
+                  status: row.status,
+                  home: { id: home.id, name: home.name, flag: home.flag || "FIFA", crest: home.crest_url || null },
+                  away: { id: away.id, name: away.name, flag: away.flag || "FIFA", crest: away.crest_url || null },
+                  homeScore: row.home_score,
+                  awayScore: row.away_score,
+                  winner: row.winner_team_id,
+                  classificationMethod: row.classification_method,
+                };
+              });
+
+              response.status(200).json({
+                provider: "cache",
+                syncedAt: lastLog.created_at,
+                cached: true,
+                nextSyncIn: Math.ceil((SYNC_COOLDOWN_MS - elapsed) / 1000),
+                fixtures,
+              });
+              return;
+            }
+          }
+        }
+      }
+    }
+
     const result = provider === "api-football" ? await fetchApiFootball() : await fetchFootballData();
 
     if (result.status === 200 && result.body.fixtures?.length) {

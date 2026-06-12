@@ -25,8 +25,11 @@ create table if not exists public.player_sessions (
   token text primary key,
   user_id uuid not null references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  last_seen_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '30 days')
 );
+
+alter table public.player_sessions add column if not exists expires_at timestamptz not null default (now() + interval '30 days');
 
 create table if not exists public.leagues (
   id uuid primary key default gen_random_uuid(),
@@ -209,10 +212,14 @@ as $$
 declare
   new_token text;
 begin
+  -- Limpar sessões expiradas desse usuário
+  delete from public.player_sessions
+  where user_id = player_id and expires_at < now();
+
   new_token := encode(gen_random_bytes(32), 'hex');
 
-  insert into public.player_sessions (token, user_id)
-  values (new_token, player_id);
+  insert into public.player_sessions (token, user_id, expires_at)
+  values (new_token, player_id, now() + interval '30 days');
 
   return new_token;
 end;
@@ -231,17 +238,31 @@ begin
   into current_player_id
   from public.player_sessions
   where token = session_token
+  and expires_at > now()
   limit 1;
 
   if current_player_id is null then
-    raise exception 'Sessao invalida';
+    raise exception 'Sessao invalida ou expirada';
   end if;
 
   update public.player_sessions
-  set last_seen_at = now()
+  set last_seen_at = now(),
+      expires_at = now() + interval '30 days'
   where token = session_token;
 
   return current_player_id;
+end;
+$$;
+
+create or replace function public.logout_player(session_token text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.player_sessions
+  where token = session_token;
 end;
 $$;
 
@@ -375,7 +396,13 @@ begin
     'code', case when league_data.owner_id = current_player_id then league_data.code else null end,
     'owner_id', league_data.owner_id,
     'role', league_data.role,
-    'memberCount', league_data.member_count
+    'memberCount', league_data.member_count,
+    'settings', jsonb_build_object(
+      'outcome', coalesce(league_data.points_outcome, 3),
+      'exactScore', coalesce(league_data.points_exact_score, 2),
+      'qualifier', coalesce(league_data.points_qualifier, 2),
+      'qualificationMethod', coalesce(league_data.points_qualification_method, 2)
+    )
   ) order by league_data.created_at desc), '[]'::jsonb)
   into leagues_json
   from (
@@ -386,9 +413,14 @@ begin
       l.owner_id,
       l.created_at,
       lm.role,
+      ls.points_outcome,
+      ls.points_exact_score,
+      ls.points_qualifier,
+      ls.points_qualification_method,
       (select count(*)::int from public.league_members count_lm where count_lm.league_id = l.id) as member_count
     from public.league_members lm
     join public.leagues l on l.id = lm.league_id
+    left join public.league_settings ls on ls.league_id = l.id
     where lm.user_id = current_player_id
   ) league_data;
 
@@ -624,6 +656,7 @@ grant execute on function public.get_player_state(text) to anon, authenticated;
 grant execute on function public.create_league_with_owner(text, text) to anon, authenticated;
 grant execute on function public.join_league_by_code(text, text) to anon, authenticated;
 grant execute on function public.save_player_prediction(text, uuid, text, text, int, int, text, text, int, int, int, int) to anon, authenticated;
+grant execute on function public.logout_player(text) to anon, authenticated;
 
 revoke execute on function public.create_player_session(uuid) from public, anon, authenticated;
 revoke execute on function public.player_id_from_session(text) from public, anon, authenticated;
