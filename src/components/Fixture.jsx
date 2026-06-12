@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { CalendarDays, Edit3, Lock, ListChecks } from "lucide-react";
+import { CalendarDays, Edit3, Lock, ListChecks, Users, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDate, methodLabel, outcomeLabel, statusLabel } from "../utils/formatters";
 import { isFixtureClosed, scorePrediction, DEFAULT_SCORING } from "../lib/scoring";
+import { useApp } from "../contexts/AppContext.jsx";
 
 export function useCountdown(targetDate) {
   const [timeLeft, setTimeLeft] = useState("");
@@ -120,7 +121,50 @@ export function FixtureCard({ fixture, prediction, onSavePrediction, settings })
           }}
         />
       )}
+
+      {closed && <FixtureHistory fixture={fixture} settings={settings || DEFAULT_SCORING} />}
     </article>
+  );
+}
+
+export function FixtureHistory({ fixture, settings }) {
+  const { leaguePredictions, users } = useApp();
+  const [expanded, setExpanded] = useState(false);
+
+  const matchPredictions = leaguePredictions.filter((p) => p.fixtureId === fixture.id);
+  if (!matchPredictions.length) return null;
+
+  return (
+    <div className="fixture-history">
+      <button className="history-toggle" onClick={() => setExpanded(!expanded)}>
+        <Users size={16} />
+        <span>Palpites da Liga ({matchPredictions.length})</span>
+        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {expanded && (
+        <div className="history-list">
+          {matchPredictions.map((p) => {
+            const user = users.find((u) => u.id === p.userId);
+            if (!user) return null;
+            const points = fixture.status === "FINISHED" ? scorePrediction(fixture, p, settings).total : null;
+            return (
+              <div key={p.id} className="history-item">
+                <div className="history-user">
+                  <div className="avatar profile-avatar-mini">{user.avatar}</div>
+                  <span className="truncate">{user.name}</span>
+                </div>
+                <div className="history-guess">
+                  <strong>{p.homeScore} x {p.awayScore}</strong>
+                  {fixture.stageType === "KNOCKOUT" && <small>({teamNameById(fixture, p.qualifier)})</small>}
+                </div>
+                {points !== null && <b className="history-points">{points} pts</b>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
