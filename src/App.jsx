@@ -6,6 +6,7 @@ import { GamesView } from "./components/GamesView.jsx";
 import { RankingView } from "./components/RankingView.jsx";
 import { ProfileView } from "./components/ProfileView.jsx";
 import { AppProvider, useApp } from "./contexts/AppContext.jsx";
+import { isSupabaseConfigured } from "./lib/supabase";
 
 function AppContent() {
   const {
@@ -37,7 +38,7 @@ function AppContent() {
   } = useApp();
 
   if (!profile) {
-    return <LoginScreen onPlayerAuth={handlePlayerAuth} />;
+    return <LoginScreen onPlayerAuth={handlePlayerAuth} isSupabaseConfigured={isSupabaseConfigured} />;
   }
 
   if (!profile.displayNameSet) {
