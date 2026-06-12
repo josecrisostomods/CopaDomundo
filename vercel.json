@@ -10,7 +10,7 @@
   "crons": [
     {
       "path": "/api/sync-fixtures",
-      "schedule": "0 12 * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }

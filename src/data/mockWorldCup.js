@@ -103,6 +103,7 @@ const imageCodeMap = {
 const confirmedResults = {
   "Mexico|Africa do Sul": [2, 0],
   "Coreia do Sul|Tchequia": [2, 1],
+  "Canada|Bosnia": [1, 1],
 };
 
 function isoDateFrom(baseDate, dayOffset, hour = 16) {

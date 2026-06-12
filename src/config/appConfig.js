@@ -11,9 +11,9 @@ export const STORAGE = {
   predictions: "copa-predictions",
 };
 
-export const FIXTURE_DATA_VERSION = "2026-pt-br-confirmed-results-v6";
+export const FIXTURE_DATA_VERSION = "2026-pt-br-confirmed-results-v7";
 
-export const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+export const AUTO_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
 export const navItems = [
   { id: "home", label: "Inicio", icon: Home },

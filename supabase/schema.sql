@@ -204,7 +204,7 @@ create or replace function public.create_player_session(player_id uuid)
 returns text
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   new_token text;
@@ -249,7 +249,7 @@ create or replace function public.register_player(login_username text, login_pas
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   normalized_username text;
@@ -292,7 +292,7 @@ create or replace function public.login_player(login_username text, login_passwo
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   normalized_username text;

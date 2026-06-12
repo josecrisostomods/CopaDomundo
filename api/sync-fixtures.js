@@ -306,7 +306,11 @@ async function fetchApiFootball() {
   });
 
   const payload = await response.json();
-  if (!response.ok || payload.errors?.length) {
+  const hasErrors = !response.ok
+    || (Array.isArray(payload.errors) && payload.errors.length > 0)
+    || (payload.errors && typeof payload.errors === "object" && Object.keys(payload.errors).length > 0);
+
+  if (hasErrors) {
     return { status: response.status || 500, body: { error: "Falha na API-Football", payload } };
   }
 
@@ -342,7 +346,25 @@ export default async function handler(request, response) {
   try {
     const provider = request.query.provider || "api-football";
     const result = provider === "api-football" ? await fetchApiFootball() : await fetchFootballData();
-    response.status(result.status).json(result.body);
+
+    if (result.status === 200 && result.body.fixtures?.length) {
+      response.status(200).json(result.body);
+      return;
+    }
+
+    const fallbackProvider = provider === "api-football" ? "football-data" : "api-football";
+    const fallback = fallbackProvider === "api-football" ? await fetchApiFootball() : await fetchFootballData();
+
+    if (fallback.status === 200 && fallback.body.fixtures?.length) {
+      response.status(200).json(fallback.body);
+      return;
+    }
+
+    response.status(result.status).json({
+      ...result.body,
+      fallbackAttempted: fallbackProvider,
+      fallbackError: fallback.body?.error || null,
+    });
   } catch (error) {
     response.status(500).json({
       error: "Nao foi possivel sincronizar jogos.",
