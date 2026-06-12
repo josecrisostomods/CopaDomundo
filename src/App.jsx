@@ -102,12 +102,11 @@ function AppContent() {
         {activeTab === "league" && (
           <LeagueView
             activeLeague={activeLeague}
-            activeLeagueId={activeLeagueId}
+            currentUser={currentUser}
+            leagues={leagues}
             onCreateLeague={createLeague}
             onJoinLeague={joinLeague}
-            setActiveLeagueId={setActiveLeagueId}
-            setActiveTab={setActiveTab}
-            users={users}
+            onSelectLeague={setActiveLeagueId}
           />
         )}
 
