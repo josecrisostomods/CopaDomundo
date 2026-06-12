@@ -17,7 +17,7 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 - Persistencia no Supabase para perfil, ligas, membros, jogos e palpites quando as variaveis estiverem configuradas.
 - Escudos/logos das selecoes quando a API retornar imagem do time.
 - Atualizacao automatica dos resultados quando o site esta aberto.
-- Cron da Vercel chamando `/api/sync-fixtures` a cada 15 minutos para gravar resultados no Supabase.
+- Cron da Vercel chamando `/api/sync-fixtures` uma vez por dia no plano Hobby para gravar resultados no Supabase.
 
 ## Rodando localmente
 
@@ -79,7 +79,8 @@ O site atualiza resultados de duas formas:
 
 2. **Sozinho na Vercel**
    - O `vercel.json` tem um cron em `/api/sync-fixtures`.
-   - A chamada roda a cada 15 minutos.
+   - No plano Hobby da Vercel, a chamada roda uma vez por dia.
+   - Enquanto alguem estiver usando o site, o frontend ainda tenta atualizar a cada 5 minutos.
    - Com `API_FOOTBALL_KEY` e `SUPABASE_SERVICE_ROLE_KEY`, os placares atualizados ficam salvos no Supabase.
 
 No desenvolvimento local com `npm run dev`, a rota serverless da Vercel pode nao estar ativa. Nesse caso, a atualizacao automatica real acontece depois do deploy na Vercel ou usando `vercel dev`.
@@ -117,7 +118,7 @@ O `vercel.json` ja esta configurado:
   "crons": [
     {
       "path": "/api/sync-fixtures",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 12 * * *"
     }
   ]
 }
