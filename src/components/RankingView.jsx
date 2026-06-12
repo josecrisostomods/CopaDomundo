@@ -6,18 +6,42 @@ import { useApp } from "../contexts/AppContext.jsx";
 
 export function RankingView({ activeLeague, ranking, fixtures, predictions }) {
   const [viewMode, setViewMode] = useState("table");
-  const { users } = useApp();
+  const { users, leagues, setActiveLeagueId } = useApp();
 
   const finished = fixtures.filter((fixture) => fixture.status === "FINISHED").length;
   const totalPoints = ranking.reduce((sum, user) => sum + user.points, 0);
 
   return (
     <section className="screen-stack">
-      <ScreenHeading
-        icon={Trophy}
-        title={`Ranking - ${activeLeague?.name}`}
-        subtitle="Desempate por placares exatos, acertos no mata-mata, palpites feitos e nome."
-      />
+      <div className="ranking-header-selector" style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--panel-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+        <Trophy size={28} style={{ color: 'var(--primary-color)' }} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <h2 style={{ fontSize: '1rem', margin: 0, color: 'var(--text-secondary)' }}>Ranking da Liga</h2>
+          {leagues.length > 1 ? (
+            <select
+              value={activeLeague?.id || ""}
+              onChange={(e) => setActiveLeagueId(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: 'var(--bg-color)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-color)',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                width: '100%',
+                cursor: 'pointer'
+              }}
+            >
+              {leagues.map(l => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          ) : (
+            <strong style={{ fontSize: '1.2rem', color: 'var(--text-color)' }}>{activeLeague?.name}</strong>
+          )}
+        </div>
+      </div>
 
       <div className="stats-grid">
         <StatCard icon={UsersRound} label="Participantes" value={ranking.length} hint="nesta liga" />
