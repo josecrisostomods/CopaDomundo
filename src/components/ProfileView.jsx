@@ -5,6 +5,7 @@ import { ScreenHeading, StatCard } from "./Shared.jsx";
 export function ProfileView({
   activeLeague,
   onLogout,
+  onGenerateRecoveryCode,
   onUpdateProfile,
   profile,
   profileRank,
@@ -15,6 +16,7 @@ export function ProfileView({
   const [draft, setDraft] = useState({ name: profile.name || "" });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [generatingCode, setGeneratingCode] = useState(false);
 
   useEffect(() => {
     setDraft({ name: profile.name || "" });
@@ -31,6 +33,19 @@ export function ProfileView({
       setMessage("Perfil salvo.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function generateCode() {
+    setGeneratingCode(true);
+    setMessage("");
+
+    try {
+      await onGenerateRecoveryCode();
+    } catch (error) {
+      setMessage(error.message || "Nao foi possivel gerar o codigo.");
+    } finally {
+      setGeneratingCode(false);
     }
   }
 
@@ -123,6 +138,13 @@ export function ProfileView({
           <p className="helper-text">
             Sua conta esta conectada em {profile.username}. Desconecte caso queira usar outro usuario neste dispositivo.
           </p>
+          <p className="helper-text">
+            Se voce perdeu o codigo de validacao, gere um novo e guarde em um lugar seguro. O codigo anterior deixa de valer.
+          </p>
+          <button className="primary-button full" onClick={generateCode} disabled={generatingCode}>
+            {generatingCode ? "Gerando..." : "Gerar codigo de validacao"}
+            <ShieldCheck size={18} />
+          </button>
           <button className="secondary-button full" onClick={onLogout}>
             Sair da conta
           </button>

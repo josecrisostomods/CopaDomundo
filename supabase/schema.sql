@@ -203,6 +203,7 @@ drop function if exists public.create_league_with_owner(text, text);
 drop function if exists public.join_league_by_code(text);
 drop function if exists public.join_public_league(text, uuid);
 drop function if exists public.reset_player_credentials(text, text, text);
+drop function if exists public.rotate_player_recovery_code(text);
 
 create or replace function public.player_payload(player public.profiles)
 returns jsonb
@@ -482,6 +483,38 @@ begin
 exception
   when unique_violation then
     raise exception 'Usuario ja existe';
+end;
+$$;
+
+create or replace function public.rotate_player_recovery_code(session_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  current_player_id uuid;
+  next_recovery_code text;
+  next_normalized_recovery_code text;
+begin
+  current_player_id := public.player_id_from_session(session_token);
+
+  loop
+    next_recovery_code := public.generate_recovery_code();
+    next_normalized_recovery_code := public.normalize_recovery_code(next_recovery_code);
+    exit when not exists (
+      select 1
+      from public.profiles p
+      where p.recovery_code_hash is not null
+      and p.recovery_code_hash = crypt(next_normalized_recovery_code, p.recovery_code_hash)
+    );
+  end loop;
+
+  update public.profiles
+  set recovery_code_hash = crypt(next_normalized_recovery_code, gen_salt('bf'))
+  where id = current_player_id;
+
+  return jsonb_build_object('recoveryCode', next_recovery_code);
 end;
 $$;
 
@@ -957,6 +990,7 @@ $$;
 grant execute on function public.register_player(text, text) to anon, authenticated;
 grant execute on function public.login_player(text, text) to anon, authenticated;
 grant execute on function public.reset_player_credentials(text, text, text) to anon, authenticated;
+grant execute on function public.rotate_player_recovery_code(text) to anon, authenticated;
 grant execute on function public.update_player_profile(text, text) to anon, authenticated;
 grant execute on function public.get_player_state(text) to anon, authenticated;
 grant execute on function public.create_league_with_owner(text, text, boolean) to anon, authenticated;

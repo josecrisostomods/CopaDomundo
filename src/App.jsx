@@ -37,6 +37,7 @@ function AppContent() {
     joinLeague,
     joinPublicLeague,
     updateProfile,
+    generateRecoveryCode,
     handleLogout,
   } = useApp();
 
@@ -137,6 +138,7 @@ function AppContent() {
             dataState={dataState}
             lastSync={lastSync}
             onLogout={handleLogout}
+            onGenerateRecoveryCode={generateRecoveryCode}
             onUpdateProfile={updateProfile}
             profile={currentUser}
             profileRank={profileRank}

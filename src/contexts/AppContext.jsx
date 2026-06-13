@@ -30,6 +30,7 @@ export function AppProvider({ children }) {
     sessionToken,
     recoveryCode,
     clearRecoveryCode,
+    generateRecoveryCode,
     handlePlayerAuth: authPlayerAuth,
     updateProfile: authUpdateProfile,
     handleLogout: authLogout,
@@ -202,6 +203,16 @@ export function AppProvider({ children }) {
     }
   }
 
+  async function handleGenerateRecoveryCode() {
+    try {
+      await generateRecoveryCode();
+      addToast("Codigo de validacao gerado.", "success");
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel gerar o codigo", "error");
+      throw error;
+    }
+  }
+
   useEffect(() => {
     if (!profile) return undefined;
 
@@ -279,6 +290,7 @@ export function AppProvider({ children }) {
     joinPublicLeague,
     handleSync,
     updateProfile,
+    generateRecoveryCode: handleGenerateRecoveryCode,
     handleLogout,
   };
 

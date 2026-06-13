@@ -158,6 +158,17 @@ export async function resetPlayerCredentials({ recoveryCode, username, password 
   return mapAuthPayload(data);
 }
 
+export async function rotateRecoveryCode(sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("rotate_player_recovery_code", {
+    session_token: sessionToken,
+  });
+
+  if (error) throw error;
+  return data?.recoveryCode || null;
+}
+
 export async function createRemoteLeague(name, sessionToken, isPublic = false) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 

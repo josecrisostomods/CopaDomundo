@@ -7,6 +7,7 @@ import {
   logoutPlayer,
   registerPlayer,
   resetPlayerCredentials,
+  rotateRecoveryCode,
   upsertProfile,
 } from "../services/supabaseData";
 
@@ -49,9 +50,19 @@ export function useAuth() {
         : mode === "recover"
         ? await resetPlayerCredentials(payload)
         : await loginPlayer(payload);
+    let nextRecoveryCode = result.recoveryCode || null;
+
+    if (mode === "register" && !nextRecoveryCode) {
+      try {
+        nextRecoveryCode = await rotateRecoveryCode(result.sessionToken);
+      } catch {
+        nextRecoveryCode = null;
+      }
+    }
+
     setSessionToken(result.sessionToken);
     setProfile(result.profile);
-    setRecoveryCode(result.recoveryCode || null);
+    setRecoveryCode(nextRecoveryCode);
     return result;
   }
 
@@ -60,6 +71,13 @@ export function useAuth() {
     const saved = await upsertProfile(draft, sessionToken);
     setProfile((prev) => ({ ...prev, ...saved }));
     return saved;
+  }
+
+  async function generateRecoveryCode() {
+    if (!sessionToken) throw new Error("Sessao invalida.");
+    const code = await rotateRecoveryCode(sessionToken);
+    setRecoveryCode(code);
+    return code;
   }
 
   async function handleLogout() {
@@ -75,6 +93,7 @@ export function useAuth() {
     sessionToken,
     recoveryCode,
     clearRecoveryCode: () => setRecoveryCode(null),
+    generateRecoveryCode,
     handlePlayerAuth,
     updateProfile,
     handleLogout,
