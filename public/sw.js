@@ -1,3 +1,5 @@
+/* global self, caches */
+
 const CACHE_NAME = "copa-palpites-v1";
 const PRECACHE = ["/", "/world-cup-mark.svg"];
 

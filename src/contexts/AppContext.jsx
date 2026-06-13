@@ -37,7 +37,6 @@ export function AppProvider({ children }) {
     fixtures,
     setFixtures,
     syncState,
-    setSyncState,
     lastSync,
     handleSync,
   } = useFixtures();
@@ -87,6 +86,7 @@ export function AppProvider({ children }) {
 
         if (remote.fixtures.length) setFixtures(remote.fixtures);
         setPredictions(remote.predictions);
+        setBonusPredictions(remote.bonusPredictions || []);
         setMembersByLeague(remote.membersByLeague || {});
         setDataState({ loading: false, message: remote.leagues.length ? "Ligas carregadas." : "Crie ou entre em uma liga." });
       } catch (error) {
@@ -102,7 +102,7 @@ export function AppProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [profile?.id, sessionToken, setDataState, setProfile, setLeagues, setActiveLeagueId, setFixtures, setPredictions, setMembersByLeague]);
+  }, [profile?.id, sessionToken, setDataState, setProfile, setLeagues, setActiveLeagueId, setFixtures, setPredictions, setBonusPredictions, setMembersByLeague]);
 
   const users = useMemo(() => {
     if (!currentUser || !activeLeague?.id) return [];
@@ -120,16 +120,12 @@ export function AppProvider({ children }) {
   const profileRank = ranking.find((item) => item.id === currentUser?.id);
 
   async function handlePlayerAuth(payload, mode) {
-    try {
-      await authPlayerAuth(payload, mode);
-      setLeagues([]);
-      setActiveLeagueId(null);
-      setPredictions([]);
-      setMembersByLeague({});
-      setActiveTab("home");
-    } catch (e) {
-      throw e;
-    }
+    await authPlayerAuth(payload, mode);
+    setLeagues([]);
+    setActiveLeagueId(null);
+    setPredictions([]);
+    setMembersByLeague({});
+    setActiveTab("home");
   }
 
   async function savePrediction(fixture, form) {
@@ -198,7 +194,7 @@ export function AppProvider({ children }) {
       busy = true;
       try {
         await handleSync("api-football", { automatic: true, silent: true });
-      } catch (e) {
+      } catch {
         // silently fail on auto sync
       }
       busy = false;

@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { UserRound, Crown, ClipboardList, CheckCircle2, ShieldCheck, Save } from "lucide-react";
 import { ScreenHeading, StatCard } from "./Shared.jsx";
-import { formatTime } from "../utils/formatters";
 
 export function ProfileView({
   activeLeague,
-  dataState,
-  lastSync,
   onLogout,
   onUpdateProfile,
   profile,
   profileRank,
-  syncState,
   userPredictions,
   bonusPredictions,
   fixtures,

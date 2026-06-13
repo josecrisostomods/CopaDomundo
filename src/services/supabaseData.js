@@ -90,11 +90,11 @@ function mapBonusPrediction(row) {
   };
 }
 
-export async function upsertProfile(profile) {
+export async function upsertProfile(profile, sessionToken) {
   if (!supabase) return profile;
 
   const { data, error } = await supabase.rpc("update_player_profile", {
-    session_token: profile.sessionToken,
+    session_token: sessionToken,
     display_name: profile.name,
   });
 
@@ -127,7 +127,7 @@ export async function logoutPlayer(sessionToken) {
   try {
     await supabase.rpc("logout_player", { session_token: sessionToken });
   } catch {
-    // Falha silenciosa — mesmo se o servidor não responder, o logout local continua
+    // O logout local continua mesmo se o servidor nao responder.
   }
 }
 

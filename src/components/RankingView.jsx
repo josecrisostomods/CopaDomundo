@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Trophy, UsersRound, CheckCircle2, ClipboardList, Medal, CalendarDays } from "lucide-react";
-import { ScreenHeading, StatCard } from "./Shared.jsx";
+import { StatCard } from "./Shared.jsx";
 import { PerformanceChart } from "./PerformanceChart.jsx";
 import { useApp } from "../contexts/AppContext.jsx";
 import { buildRanking } from "../lib/scoring.js";

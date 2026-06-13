@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Star, Trophy, Target, Sparkles, Save } from "lucide-react";
 import { ScreenHeading } from "./Shared.jsx";
 import { useApp } from "../contexts/AppContext.jsx";
@@ -15,7 +15,12 @@ export function BonusPredictions({ fixtures, bonusPredictions, onSaveBonusPredic
   const [revelationName, setRevelationName] = useState(existingBonus?.revelationName || "");
   const [isSaving, setIsSaving] = useState(false);
 
-  // Extract unique teams
+  useEffect(() => {
+    setChampionTeamId(existingBonus?.championTeamId || "");
+    setTopScorerName(existingBonus?.topScorerName || "");
+    setRevelationName(existingBonus?.revelationName || "");
+  }, [existingBonus?.championTeamId, existingBonus?.topScorerName, existingBonus?.revelationName]);
+
   const teamsMap = new Map();
   fixtures.forEach(fixture => {
     if (fixture.home.id && !teamsMap.has(fixture.home.id)) {
@@ -45,8 +50,6 @@ export function BonusPredictions({ fixtures, bonusPredictions, onSaveBonusPredic
     }
   }
 
-  // The World Cup starts on June 11, 2026. Let's allow bonus predictions until then.
-  // In a real scenario, this would check against the first match's kickoff.
   const firstMatchKickoff = fixtures.length > 0 
     ? new Date(Math.min(...fixtures.map(f => new Date(f.kickoff).getTime())))
     : null;

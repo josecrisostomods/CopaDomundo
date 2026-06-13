@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { CalendarDays, Edit3, Lock, ListChecks, Users, ChevronDown, ChevronUp } from "lucide-react";
+import { Edit3, Lock, ListChecks, Users, ChevronDown, ChevronUp } from "lucide-react";
 import { formatDate, methodLabel, outcomeLabel, statusLabel } from "../utils/formatters";
 import { isFixtureClosed, scorePrediction, DEFAULT_SCORING } from "../lib/scoring";
 import { useApp } from "../contexts/AppContext.jsx";
@@ -28,8 +28,8 @@ export function useCountdown(targetDate) {
     }
 
     update();
-    const interval = setInterval(update, 60000);
-    return () => clearInterval(interval);
+    const interval = window.setInterval(update, 60000);
+    return () => window.clearInterval(interval);
   }, [targetDate]);
 
   return timeLeft;
@@ -51,6 +51,7 @@ export function FixtureSkeleton() {
 
 export function FixtureCard({ fixture, prediction, onSavePrediction, settings }) {
   const [expanded, setExpanded] = useState(false);
+  const [formError, setFormError] = useState("");
   const closed = isFixtureClosed(fixture);
   const result = scorePrediction(fixture, prediction, settings || DEFAULT_SCORING);
   const countdown = useCountdown(fixture.kickoff);
@@ -100,7 +101,10 @@ export function FixtureCard({ fixture, prediction, onSavePrediction, settings })
 
       <button
         className="secondary-button full"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          setFormError("");
+          setExpanded((value) => !value);
+        }}
         disabled={closed && !prediction}
       >
         {closed ? <Lock size={17} /> : <Edit3 size={17} />}
@@ -111,16 +115,23 @@ export function FixtureCard({ fixture, prediction, onSavePrediction, settings })
       </button>
 
       {expanded && (
-        <PredictionForm
-          fixture={fixture}
-          prediction={prediction}
-          closed={closed}
-          onSubmit={(form) => {
-            onSavePrediction(fixture, form)
-              .then(() => setExpanded(false))
-              .catch((err) => alert("Erro ao salvar palpite: " + err.message));
-          }}
-        />
+        <>
+          <PredictionForm
+            fixture={fixture}
+            prediction={prediction}
+            closed={closed}
+            onSubmit={async (form) => {
+              setFormError("");
+              try {
+                await onSavePrediction(fixture, form);
+                setExpanded(false);
+              } catch (error) {
+                setFormError(error.message || "Nao foi possivel salvar o palpite.");
+              }
+            }}
+          />
+          {formError && <p className="form-message">{formError}</p>}
+        </>
       )}
 
       {closed && <FixtureHistory fixture={fixture} settings={settings || DEFAULT_SCORING} />}
