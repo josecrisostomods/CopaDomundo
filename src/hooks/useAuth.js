@@ -6,6 +6,7 @@ import {
   loginPlayer,
   logoutPlayer,
   registerPlayer,
+  resetPlayerCredentials,
   upsertProfile,
 } from "../services/supabaseData";
 
@@ -24,6 +25,7 @@ function getInitialSessionToken() {
 export function useAuth() {
   const [profile, setProfile] = useState(getInitialProfile);
   const [sessionToken, setSessionToken] = useState(getInitialSessionToken);
+  const [recoveryCode, setRecoveryCode] = useState(null);
 
   useEffect(() => writeStorage(STORAGE.profile, profile), [profile]);
   useEffect(() => writeStorage(STORAGE.session, sessionToken), [sessionToken]);
@@ -37,9 +39,19 @@ export function useAuth() {
       throw new Error("Informe usuario e senha.");
     }
 
-    const result = mode === "register" ? await registerPlayer(payload) : await loginPlayer(payload);
+    if (mode === "recover" && !payload.recoveryCode) {
+      throw new Error("Informe o codigo de validacao.");
+    }
+
+    const result =
+      mode === "register"
+        ? await registerPlayer(payload)
+        : mode === "recover"
+        ? await resetPlayerCredentials(payload)
+        : await loginPlayer(payload);
     setSessionToken(result.sessionToken);
     setProfile(result.profile);
+    setRecoveryCode(result.recoveryCode || null);
     return result;
   }
 
@@ -54,12 +66,15 @@ export function useAuth() {
     await logoutPlayer(sessionToken);
     setProfile(null);
     setSessionToken(null);
+    setRecoveryCode(null);
   }
 
   return {
     profile,
     setProfile,
     sessionToken,
+    recoveryCode,
+    clearRecoveryCode: () => setRecoveryCode(null),
     handlePlayerAuth,
     updateProfile,
     handleLogout,

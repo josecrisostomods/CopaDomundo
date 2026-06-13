@@ -1,16 +1,21 @@
 import React, { useState } from "react";
-import { ChevronRight, Link2, Edit3, Share2, Copy, UsersRound, CheckCircle2 } from "lucide-react";
+import { ChevronRight, Link2, Edit3, Share2, Copy, UsersRound, CheckCircle2, ShieldCheck } from "lucide-react";
 import { useToast } from "./Toast.jsx";
 import { ScreenHeading } from "./Shared.jsx";
 
 export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ username: "", password: "" });
+  const [form, setForm] = useState({ username: "", password: "", recoveryCode: "" });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   async function submit(event) {
     event.preventDefault();
+    if (mode === "recover" && !form.recoveryCode) {
+      setMessage("Informe o codigo de validacao.");
+      return;
+    }
+
     if (!form.username || !form.password) {
       setMessage("Preencha todos os campos.");
       return;
@@ -39,49 +44,118 @@ export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
       </section>
 
       <form className="login-card" onSubmit={submit}>
-        <div className="mode-switch">
+        <div className="mode-switch mode-switch-three">
           <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>
             Entrar
           </button>
           <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>
             Cadastrar
           </button>
+          <button type="button" className={mode === "recover" ? "active" : ""} onClick={() => setMode("recover")}>
+            Recuperar
+          </button>
         </div>
 
+        {mode === "recover" && (
+          <label>
+            Codigo de validacao
+            <input
+              autoComplete="one-time-code"
+              value={form.recoveryCode}
+              onChange={(event) => setForm({ ...form, recoveryCode: event.target.value })}
+              placeholder="Cole seu codigo"
+            />
+          </label>
+        )}
+
         <label>
-          Usuario
+          {mode === "recover" ? "Novo usuario" : "Usuario"}
           <input
             autoComplete="username"
             value={form.username}
             onChange={(event) => setForm({ ...form, username: event.target.value })}
-            placeholder="Digite seu usuario"
+            placeholder={mode === "recover" ? "Digite o novo usuario" : "Digite seu usuario"}
           />
         </label>
 
         <label>
-          Senha
+          {mode === "recover" ? "Nova senha" : "Senha"}
           <input
             type="password"
-            autoComplete={mode === "register" ? "new-password" : "current-password"}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
             value={form.password}
             onChange={(event) => setForm({ ...form, password: event.target.value })}
-            placeholder="Senha"
+            placeholder={mode === "recover" ? "Digite a nova senha" : "Senha"}
           />
         </label>
 
         {message && <p className="form-message">{message}</p>}
 
         <button className="primary-button" disabled={loading || !isSupabaseConfigured}>
-          {loading ? "Entrando..." : mode === "register" ? "Criar conta" : "Entrar"}
+          {loading
+            ? "Processando..."
+            : mode === "register"
+            ? "Criar conta"
+            : mode === "recover"
+            ? "Criar novas credenciais"
+            : "Entrar"}
           <ChevronRight size={18} />
         </button>
 
         <p className="helper-text">
-          {isSupabaseConfigured
-            ? "Use usuario e senha para entrar. O nome do ranking voce escolhe depois."
-            : "Login indisponivel no momento."}
+          {!isSupabaseConfigured && "Login indisponivel no momento."}
+          {isSupabaseConfigured && mode === "login" && "Use usuario e senha para entrar."}
+          {isSupabaseConfigured && mode === "register" && "Depois guarde o codigo de validacao da conta."}
+          {isSupabaseConfigured && mode === "recover" && "Use seu codigo para criar novo usuario e senha."}
         </p>
       </form>
+    </main>
+  );
+}
+
+export function RecoveryCodeScreen({ code, onContinue }) {
+  const [message, setMessage] = useState("");
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setMessage("Codigo copiado.");
+    } catch {
+      setMessage("Nao foi possivel copiar automaticamente.");
+    }
+  }
+
+  return (
+    <main className="login-page">
+      <section className="login-hero">
+        <img src="/world-cup-mark.svg" alt="" className="brand-mark" />
+        <span className="eyebrow">Codigo de validacao</span>
+        <h1>Guarde este codigo</h1>
+        <p>Ele permite recuperar sua conta mesmo se voce esquecer usuario e senha.</p>
+      </section>
+
+      <section className="login-card recovery-card">
+        <div className="recovery-warning">
+          <ShieldCheck size={20} />
+          <span>Copie e guarde em um lugar seguro. O codigo aparece aqui uma unica vez.</span>
+        </div>
+
+        <div className="recovery-code-box">
+          <strong>{code}</strong>
+        </div>
+
+        {message && <p className="form-message">{message}</p>}
+
+        <button className="secondary-button full" type="button" onClick={copyCode}>
+          <Copy size={18} />
+          Copiar codigo
+        </button>
+
+        <button className="primary-button full" type="button" onClick={onContinue}>
+          Ja guardei o codigo
+          <ChevronRight size={18} />
+        </button>
+      </section>
     </main>
   );
 }

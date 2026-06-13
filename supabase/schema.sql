@@ -4,6 +4,7 @@ create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   username text,
   password_hash text,
+  recovery_code_hash text,
   name text not null,
   avatar text,
   display_name_set boolean not null default false,
@@ -14,6 +15,7 @@ alter table public.profiles drop constraint if exists profiles_id_fkey;
 alter table public.profiles alter column id set default gen_random_uuid();
 alter table public.profiles add column if not exists username text;
 alter table public.profiles add column if not exists password_hash text;
+alter table public.profiles add column if not exists recovery_code_hash text;
 alter table public.profiles add column if not exists display_name_set boolean not null default false;
 update public.profiles
 set username = lower(coalesce(username, 'jogador_' || substr(id::text, 1, 8)))
@@ -200,6 +202,7 @@ drop function if exists public.create_league_with_owner(text);
 drop function if exists public.create_league_with_owner(text, text);
 drop function if exists public.join_league_by_code(text);
 drop function if exists public.join_public_league(text, uuid);
+drop function if exists public.reset_player_credentials(text, text, text);
 
 create or replace function public.player_payload(player public.profiles)
 returns jsonb
@@ -223,6 +226,31 @@ language sql
 immutable
 as $$
   select lower(regexp_replace(trim(coalesce(raw_username, '')), '[^a-zA-Z0-9_.-]', '', 'g'));
+$$;
+
+create or replace function public.normalize_recovery_code(raw_code text)
+returns text
+language sql
+immutable
+as $$
+  select upper(regexp_replace(trim(coalesce(raw_code, '')), '[^a-zA-Z0-9]', '', 'g'));
+$$;
+
+create or replace function public.generate_recovery_code()
+returns text
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  raw_code text;
+begin
+  raw_code := upper(encode(gen_random_bytes(8), 'hex'));
+  return substr(raw_code, 1, 4) || '-' ||
+    substr(raw_code, 5, 4) || '-' ||
+    substr(raw_code, 9, 4) || '-' ||
+    substr(raw_code, 13, 4);
+end;
 $$;
 
 create or replace function public.create_player_session(player_id uuid)
@@ -296,6 +324,8 @@ set search_path = public, extensions
 as $$
 declare
   normalized_username text;
+  recovery_code text;
+  normalized_recovery_code text;
   new_player public.profiles;
   new_token text;
 begin
@@ -309,10 +339,22 @@ begin
     raise exception 'Informe uma senha';
   end if;
 
-  insert into public.profiles (username, password_hash, name, avatar, display_name_set)
+  loop
+    recovery_code := public.generate_recovery_code();
+    normalized_recovery_code := public.normalize_recovery_code(recovery_code);
+    exit when not exists (
+      select 1
+      from public.profiles p
+      where p.recovery_code_hash is not null
+      and p.recovery_code_hash = crypt(normalized_recovery_code, p.recovery_code_hash)
+    );
+  end loop;
+
+  insert into public.profiles (username, password_hash, recovery_code_hash, name, avatar, display_name_set)
   values (
     normalized_username,
     crypt(login_password, gen_salt('bf')),
+    crypt(normalized_recovery_code, gen_salt('bf')),
     normalized_username,
     upper(substr(normalized_username, 1, 2)),
     false
@@ -323,6 +365,7 @@ begin
 
   return jsonb_build_object(
     'sessionToken', new_token,
+    'recoveryCode', recovery_code,
     'profile', public.player_payload(new_player)
   );
 exception
@@ -363,6 +406,82 @@ begin
     'sessionToken', new_token,
     'profile', public.player_payload(found_player)
   );
+end;
+$$;
+
+create or replace function public.reset_player_credentials(recovery_code text, new_username text, new_password text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  normalized_code text;
+  normalized_username text;
+  next_recovery_code text;
+  next_normalized_recovery_code text;
+  found_player public.profiles;
+  updated_player public.profiles;
+  new_token text;
+begin
+  normalized_code := public.normalize_recovery_code(recovery_code);
+  normalized_username := public.normalize_player_username(new_username);
+
+  if normalized_code = '' then
+    raise exception 'Informe o codigo de validacao';
+  end if;
+
+  if normalized_username = '' then
+    raise exception 'Informe um novo usuario';
+  end if;
+
+  if new_password is null or new_password = '' then
+    raise exception 'Informe uma nova senha';
+  end if;
+
+  select *
+  into found_player
+  from public.profiles p
+  where p.recovery_code_hash is not null
+  and p.recovery_code_hash = crypt(normalized_code, p.recovery_code_hash)
+  limit 1;
+
+  if found_player.id is null then
+    raise exception 'Codigo de validacao invalido';
+  end if;
+
+  loop
+    next_recovery_code := public.generate_recovery_code();
+    next_normalized_recovery_code := public.normalize_recovery_code(next_recovery_code);
+    exit when not exists (
+      select 1
+      from public.profiles p
+      where p.recovery_code_hash is not null
+      and p.recovery_code_hash = crypt(next_normalized_recovery_code, p.recovery_code_hash)
+    );
+  end loop;
+
+  update public.profiles
+  set
+    username = normalized_username,
+    password_hash = crypt(new_password, gen_salt('bf')),
+    recovery_code_hash = crypt(next_normalized_recovery_code, gen_salt('bf'))
+  where id = found_player.id
+  returning * into updated_player;
+
+  delete from public.player_sessions
+  where user_id = updated_player.id;
+
+  new_token := public.create_player_session(updated_player.id);
+
+  return jsonb_build_object(
+    'sessionToken', new_token,
+    'recoveryCode', next_recovery_code,
+    'profile', public.player_payload(updated_player)
+  );
+exception
+  when unique_violation then
+    raise exception 'Usuario ja existe';
 end;
 $$;
 
@@ -837,6 +956,7 @@ $$;
 
 grant execute on function public.register_player(text, text) to anon, authenticated;
 grant execute on function public.login_player(text, text) to anon, authenticated;
+grant execute on function public.reset_player_credentials(text, text, text) to anon, authenticated;
 grant execute on function public.update_player_profile(text, text) to anon, authenticated;
 grant execute on function public.get_player_state(text) to anon, authenticated;
 grant execute on function public.create_league_with_owner(text, text, boolean) to anon, authenticated;
@@ -848,5 +968,6 @@ grant execute on function public.logout_player(text) to anon, authenticated;
 
 revoke execute on function public.create_player_session(uuid) from public, anon, authenticated;
 revoke execute on function public.player_id_from_session(text) from public, anon, authenticated;
+revoke execute on function public.generate_recovery_code() from public, anon, authenticated;
 
 notify pgrst, 'reload schema';

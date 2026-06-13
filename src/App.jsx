@@ -1,5 +1,5 @@
 import React from "react";
-import { LoginScreen, DisplayNameScreen, LeagueRequired, LeagueView } from "./components/AuthAndLeague.jsx";
+import { LoginScreen, RecoveryCodeScreen, DisplayNameScreen, LeagueRequired, LeagueView } from "./components/AuthAndLeague.jsx";
 import { Header, BottomNav } from "./components/Layout.jsx";
 import { Dashboard } from "./components/Dashboard.jsx";
 import { GamesView } from "./components/GamesView.jsx";
@@ -13,6 +13,8 @@ function AppContent() {
   const {
     profile,
     currentUser,
+    recoveryCode,
+    clearRecoveryCode,
     activeTab,
     setActiveTab,
     leagues,
@@ -40,6 +42,10 @@ function AppContent() {
 
   if (!profile) {
     return <LoginScreen onPlayerAuth={handlePlayerAuth} isSupabaseConfigured={isSupabaseConfigured} />;
+  }
+
+  if (recoveryCode) {
+    return <RecoveryCodeScreen code={recoveryCode} onContinue={clearRecoveryCode} />;
   }
 
   if (!profile.displayNameSet) {

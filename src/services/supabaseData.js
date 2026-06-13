@@ -106,6 +106,7 @@ export async function upsertProfile(profile, sessionToken) {
 function mapAuthPayload(payload) {
   return {
     sessionToken: payload.sessionToken,
+    recoveryCode: payload.recoveryCode || null,
     profile: mapProfile(payload.profile),
   };
 }
@@ -138,6 +139,19 @@ export async function loginPlayer({ username, password }) {
   const { data, error } = await supabase.rpc("login_player", {
     login_username: username,
     login_password: password,
+  });
+
+  if (error) throw error;
+  return mapAuthPayload(data);
+}
+
+export async function resetPlayerCredentials({ recoveryCode, username, password }) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("reset_player_credentials", {
+    recovery_code: recoveryCode,
+    new_username: username,
+    new_password: password,
   });
 
   if (error) throw error;

@@ -7,6 +7,7 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 - React + Vite na raiz do repositorio.
 - Interface pensada primeiro para celular.
 - Login simples por usuario e senha, sem confirmacao por e-mail.
+- Codigo de validacao unico para recuperar acesso caso o usuario esqueca usuario ou senha.
 - Ligas privadas com codigo de convite e ligas publicas abertas para qualquer usuario entrar.
 - Calendario com 104 jogos salvos no app para garantir navegacao mesmo antes da API responder.
 - Palpite de fase de grupos: vencedor, empate e placar exato.
@@ -98,7 +99,7 @@ O arquivo `supabase/schema.sql` contem a estrutura inicial para:
 - palpites
 - configuracoes de pontuacao
 - logs de sincronizacao da API
-- funcoes RPC para cadastrar jogador, entrar, criar liga, listar/entrar em ligas publicas e salvar palpite
+- funcoes RPC para cadastrar jogador, entrar, recuperar credenciais com codigo de validacao, criar liga, listar/entrar em ligas publicas e salvar palpite
 
 Para ativar:
 
