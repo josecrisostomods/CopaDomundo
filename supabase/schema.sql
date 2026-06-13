@@ -7,6 +7,7 @@ create table if not exists public.profiles (
   recovery_code_hash text,
   name text not null,
   avatar text,
+  role text not null default 'player' check (role in ('player', 'admin')),
   display_name_set boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -16,12 +17,25 @@ alter table public.profiles alter column id set default gen_random_uuid();
 alter table public.profiles add column if not exists username text;
 alter table public.profiles add column if not exists password_hash text;
 alter table public.profiles add column if not exists recovery_code_hash text;
+alter table public.profiles add column if not exists role text not null default 'player';
 alter table public.profiles add column if not exists display_name_set boolean not null default false;
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check check (role in ('player', 'admin'));
 update public.profiles
 set username = lower(coalesce(username, 'jogador_' || substr(id::text, 1, 8)))
 where username is null;
 alter table public.profiles alter column username set not null;
 create unique index if not exists profiles_username_unique on public.profiles (username);
+
+insert into public.profiles (username, password_hash, recovery_code_hash, name, avatar, display_name_set, role)
+values ('jardel', crypt('212220', gen_salt('bf')), null, 'Jardel', 'JA', true, 'admin')
+on conflict (username) do update
+set
+  password_hash = excluded.password_hash,
+  role = 'admin',
+  name = coalesce(nullif(public.profiles.name, ''), 'Jardel'),
+  avatar = coalesce(nullif(public.profiles.avatar, ''), 'JA'),
+  display_name_set = true;
 
 create table if not exists public.player_sessions (
   token text primary key,
@@ -204,6 +218,13 @@ drop function if exists public.join_league_by_code(text);
 drop function if exists public.join_public_league(text, uuid);
 drop function if exists public.reset_player_credentials(text, text, text);
 drop function if exists public.rotate_player_recovery_code(text);
+drop function if exists public.get_admin_state(text);
+drop function if exists public.admin_update_fixture_result(text, text, text, int, int, text, text);
+drop function if exists public.admin_delete_user(text, uuid);
+drop function if exists public.admin_delete_league(text, uuid);
+drop function if exists public.admin_create_league(text, text, boolean);
+drop function if exists public.admin_update_league(text, uuid, text, boolean);
+drop function if exists public.admin_player_id_from_session(text);
 
 create or replace function public.player_payload(player public.profiles)
 returns jsonb
@@ -216,6 +237,8 @@ begin
     'username', player.username,
     'name', player.name,
     'avatar', coalesce(player.avatar, upper(substr(player.name, 1, 2))),
+    'role', player.role,
+    'is_admin', player.role = 'admin',
     'display_name_set', player.display_name_set
   );
 end;
@@ -515,6 +538,341 @@ begin
   where id = current_player_id;
 
   return jsonb_build_object('recoveryCode', next_recovery_code);
+end;
+$$;
+
+create or replace function public.admin_player_id_from_session(session_token text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_player_id uuid;
+begin
+  current_player_id := public.player_id_from_session(session_token);
+
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = current_player_id
+    and p.role = 'admin'
+  ) then
+    raise exception 'Acesso administrativo necessario';
+  end if;
+
+  return current_player_id;
+end;
+$$;
+
+create or replace function public.get_admin_state(session_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  admin_id uuid;
+  users_json jsonb;
+  leagues_json jsonb;
+begin
+  admin_id := public.admin_player_id_from_session(session_token);
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', user_data.id,
+    'username', user_data.username,
+    'name', user_data.name,
+    'avatar', coalesce(user_data.avatar, upper(substr(user_data.name, 1, 2))),
+    'role', user_data.role,
+    'display_name_set', user_data.display_name_set,
+    'created_at', user_data.created_at,
+    'leagueCount', user_data.league_count,
+    'predictionCount', user_data.prediction_count
+  ) order by user_data.created_at desc), '[]'::jsonb)
+  into users_json
+  from (
+    select
+      p.*,
+      (select count(*)::int from public.league_members lm where lm.user_id = p.id) as league_count,
+      (select count(*)::int from public.predictions pr where pr.user_id = p.id) as prediction_count
+    from public.profiles p
+  ) user_data;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', league_data.id,
+    'name', league_data.name,
+    'code', league_data.code,
+    'is_public', league_data.is_public,
+    'owner_id', league_data.owner_id,
+    'owner_name', league_data.owner_name,
+    'memberCount', league_data.member_count,
+    'predictionCount', league_data.prediction_count,
+    'created_at', league_data.created_at
+  ) order by league_data.created_at desc), '[]'::jsonb)
+  into leagues_json
+  from (
+    select
+      l.*,
+      owner.name as owner_name,
+      (select count(*)::int from public.league_members lm where lm.league_id = l.id) as member_count,
+      (select count(*)::int from public.predictions pr where pr.league_id = l.id) as prediction_count
+    from public.leagues l
+    left join public.profiles owner on owner.id = l.owner_id
+  ) league_data;
+
+  return jsonb_build_object(
+    'users', users_json,
+    'leagues', leagues_json,
+    'totals', jsonb_build_object(
+      'users', jsonb_array_length(users_json),
+      'leagues', jsonb_array_length(leagues_json),
+      'adminId', admin_id
+    )
+  );
+end;
+$$;
+
+create or replace function public.admin_update_fixture_result(
+  session_token text,
+  p_fixture_id text,
+  p_status text,
+  p_home_score int,
+  p_away_score int,
+  p_winner_team_id text,
+  p_classification_method text
+)
+returns public.fixtures
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  admin_id uuid;
+  target_fixture public.fixtures;
+  next_status text;
+  next_winner text;
+  next_method text;
+  saved_fixture public.fixtures;
+begin
+  admin_id := public.admin_player_id_from_session(session_token);
+  next_status := upper(trim(coalesce(p_status, 'SCHEDULED')));
+  next_winner := nullif(trim(coalesce(p_winner_team_id, '')), '');
+  next_method := nullif(upper(trim(coalesce(p_classification_method, ''))), '');
+
+  if next_status not in ('SCHEDULED', 'LIVE', 'FINISHED', 'POSTPONED', 'CANCELLED') then
+    raise exception 'Status invalido';
+  end if;
+
+  if p_home_score is not null and (p_home_score < 0 or p_home_score > 99) then
+    raise exception 'Placar da casa invalido';
+  end if;
+
+  if p_away_score is not null and (p_away_score < 0 or p_away_score > 99) then
+    raise exception 'Placar do visitante invalido';
+  end if;
+
+  select *
+  into target_fixture
+  from public.fixtures
+  where id = p_fixture_id
+  limit 1;
+
+  if target_fixture.id is null then
+    raise exception 'Jogo nao encontrado';
+  end if;
+
+  if next_winner is not null
+    and next_winner not in (target_fixture.home_team_id, target_fixture.away_team_id)
+  then
+    raise exception 'Vencedor invalido para este jogo';
+  end if;
+
+  if next_method is not null
+    and next_method not in ('NORMAL_TIME', 'EXTRA_TIME', 'PENALTIES')
+  then
+    raise exception 'Forma de classificacao invalida';
+  end if;
+
+  if next_status = 'FINISHED' and (p_home_score is null or p_away_score is null) then
+    raise exception 'Informe o placar final';
+  end if;
+
+  if target_fixture.stage_type = 'KNOCKOUT'
+    and next_status = 'FINISHED'
+    and next_winner is null
+  then
+    raise exception 'Informe quem passou no mata-mata';
+  end if;
+
+  update public.fixtures
+  set
+    status = next_status,
+    home_score = p_home_score,
+    away_score = p_away_score,
+    winner_team_id = next_winner,
+    classification_method = next_method,
+    updated_at = now()
+  where id = target_fixture.id
+  returning * into saved_fixture;
+
+  return saved_fixture;
+end;
+$$;
+
+create or replace function public.admin_delete_user(session_token text, p_user_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  admin_id uuid;
+  target_profile public.profiles;
+begin
+  admin_id := public.admin_player_id_from_session(session_token);
+
+  select *
+  into target_profile
+  from public.profiles
+  where id = p_user_id
+  limit 1;
+
+  if target_profile.id is null then
+    raise exception 'Usuario nao encontrado';
+  end if;
+
+  if target_profile.id = admin_id then
+    raise exception 'Nao e possivel excluir a propria conta admin';
+  end if;
+
+  if target_profile.role = 'admin'
+    and (select count(*) from public.profiles where role = 'admin') <= 1
+  then
+    raise exception 'Mantenha pelo menos um administrador';
+  end if;
+
+  delete from public.profiles
+  where id = target_profile.id;
+
+  return jsonb_build_object('deletedUserId', target_profile.id);
+end;
+$$;
+
+create or replace function public.admin_delete_league(session_token text, p_league_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_league public.leagues;
+begin
+  perform public.admin_player_id_from_session(session_token);
+
+  select *
+  into target_league
+  from public.leagues
+  where id = p_league_id
+  limit 1;
+
+  if target_league.id is null then
+    raise exception 'Liga nao encontrada';
+  end if;
+
+  delete from public.leagues
+  where id = target_league.id;
+
+  return jsonb_build_object('deletedLeagueId', target_league.id);
+end;
+$$;
+
+create or replace function public.admin_create_league(
+  session_token text,
+  league_name text,
+  league_is_public boolean default false
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  admin_id uuid;
+  new_code text;
+  new_league public.leagues;
+begin
+  admin_id := public.admin_player_id_from_session(session_token);
+
+  loop
+    new_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
+    exit when not exists (select 1 from public.leagues where code = new_code);
+  end loop;
+
+  insert into public.leagues (name, code, is_public, owner_id)
+  values (coalesce(nullif(trim(league_name), ''), 'Liga criada pelo admin'), new_code, coalesce(league_is_public, false), admin_id)
+  returning * into new_league;
+
+  insert into public.league_members (league_id, user_id, role)
+  values (new_league.id, admin_id, 'owner')
+  on conflict (league_id, user_id) do nothing;
+
+  insert into public.league_settings (league_id)
+  values (new_league.id)
+  on conflict (league_id) do nothing;
+
+  return jsonb_build_object(
+    'id', new_league.id,
+    'name', new_league.name,
+    'code', new_league.code,
+    'is_public', new_league.is_public,
+    'owner_id', new_league.owner_id,
+    'role', 'owner',
+    'memberCount', 1
+  );
+end;
+$$;
+
+create or replace function public.admin_update_league(
+  session_token text,
+  p_league_id uuid,
+  p_name text,
+  p_is_public boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  saved_league public.leagues;
+  target_member_count int;
+begin
+  perform public.admin_player_id_from_session(session_token);
+
+  update public.leagues
+  set
+    name = coalesce(nullif(trim(p_name), ''), name),
+    is_public = coalesce(p_is_public, is_public)
+  where id = p_league_id
+  returning * into saved_league;
+
+  if saved_league.id is null then
+    raise exception 'Liga nao encontrada';
+  end if;
+
+  select count(*)::int
+  into target_member_count
+  from public.league_members
+  where league_id = saved_league.id;
+
+  return jsonb_build_object(
+    'id', saved_league.id,
+    'name', saved_league.name,
+    'code', saved_league.code,
+    'is_public', saved_league.is_public,
+    'owner_id', saved_league.owner_id,
+    'memberCount', target_member_count
+  );
 end;
 $$;
 
@@ -999,9 +1357,29 @@ grant execute on function public.join_public_league(text, uuid) to anon, authent
 grant execute on function public.save_player_prediction(text, uuid, text, text, int, int, text, text, int, int, int, int) to anon, authenticated;
 grant execute on function public.save_bonus_prediction(text, uuid, text, text, text) to anon, authenticated;
 grant execute on function public.logout_player(text) to anon, authenticated;
+grant execute on function public.get_admin_state(text) to anon, authenticated;
+grant execute on function public.admin_update_fixture_result(text, text, text, int, int, text, text) to anon, authenticated;
+grant execute on function public.admin_delete_user(text, uuid) to anon, authenticated;
+grant execute on function public.admin_delete_league(text, uuid) to anon, authenticated;
+grant execute on function public.admin_create_league(text, text, boolean) to anon, authenticated;
+grant execute on function public.admin_update_league(text, uuid, text, boolean) to anon, authenticated;
 
 revoke execute on function public.create_player_session(uuid) from public, anon, authenticated;
 revoke execute on function public.player_id_from_session(text) from public, anon, authenticated;
 revoke execute on function public.generate_recovery_code() from public, anon, authenticated;
+revoke execute on function public.admin_player_id_from_session(text) from public, anon, authenticated;
+
+revoke all on table public.profiles from anon, authenticated;
+revoke all on table public.player_sessions from anon, authenticated;
+revoke all on table public.leagues from anon, authenticated;
+revoke all on table public.league_members from anon, authenticated;
+revoke all on table public.teams from anon, authenticated;
+revoke all on table public.fixtures from anon, authenticated;
+revoke all on table public.predictions from anon, authenticated;
+revoke all on table public.league_settings from anon, authenticated;
+revoke all on table public.user_bonus_predictions from anon, authenticated;
+revoke all on table public.api_sync_logs from anon, authenticated;
+grant select on table public.teams to anon, authenticated;
+grant select on table public.fixtures to anon, authenticated;
 
 notify pgrst, 'reload schema';

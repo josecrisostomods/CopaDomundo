@@ -6,6 +6,7 @@ import { GamesView } from "./components/GamesView.jsx";
 import { BonusPredictions } from "./components/BonusPredictions.jsx";
 import { RankingView } from "./components/RankingView.jsx";
 import { ProfileView } from "./components/ProfileView.jsx";
+import { AdminView } from "./components/AdminView.jsx";
 import { AppProvider, useApp } from "./contexts/AppContext.jsx";
 import { isSupabaseConfigured } from "./lib/supabase";
 
@@ -27,6 +28,7 @@ function AppContent() {
     leaguePredictions,
     ranking,
     profileRank,
+    adminState,
     syncState,
     dataState,
     lastSync,
@@ -38,6 +40,11 @@ function AppContent() {
     joinPublicLeague,
     updateProfile,
     generateRecoveryCode,
+    refreshAdminState,
+    adminUpdateFixtureResult,
+    adminCreateLeague,
+    adminDeleteUser,
+    adminDeleteLeague,
     handleLogout,
   } = useApp();
 
@@ -148,9 +155,22 @@ function AppContent() {
             fixtures={fixtures}
           />
         )}
+
+        {activeTab === "admin" && currentUser?.isAdmin && (
+          <AdminView
+            adminState={adminState}
+            currentUser={currentUser}
+            fixtures={fixtures}
+            onCreateLeague={adminCreateLeague}
+            onDeleteLeague={adminDeleteLeague}
+            onDeleteUser={adminDeleteUser}
+            onRefresh={refreshAdminState}
+            onUpdateFixtureResult={adminUpdateFixtureResult}
+          />
+        )}
       </main>
 
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <BottomNav activeTab={activeTab} profile={currentUser} setActiveTab={setActiveTab} />
     </div>
   );
 }

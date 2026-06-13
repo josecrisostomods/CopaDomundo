@@ -1,4 +1,4 @@
-import { CalendarDays, Home, Trophy, UserRound, UsersRound, Star } from "lucide-react";
+import { CalendarDays, Home, ShieldCheck, Star, Trophy, UserRound, UsersRound } from "lucide-react";
 
 export const STORAGE = {
   profile: "copa-profile",
@@ -22,6 +22,7 @@ export const navItems = [
   { id: "ranking", label: "Ranking", icon: Trophy },
   { id: "league", label: "Liga", icon: UsersRound },
   { id: "profile", label: "Perfil", icon: UserRound },
+  { id: "admin", label: "Admin", icon: ShieldCheck, adminOnly: true },
 ];
 
 export const methodOptions = [

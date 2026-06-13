@@ -230,7 +230,7 @@ label {
   bottom: 10px;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(var(--nav-count, 5), minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   border: 1px solid var(--line);
@@ -246,7 +246,7 @@ label {
   gap: 4px;
   min-height: 52px;
   border-radius: 12px;
-  font-size: 0.72rem;
+  font-size: clamp(0.62rem, 2.7vw, 0.72rem);
   font-weight: 800;
 }
 
@@ -1095,6 +1095,80 @@ legend {
   font-size: 1.1rem;
 }
 
+.admin-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-actions-row .form-message {
+  margin-left: auto;
+}
+
+.admin-table {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 12px;
+}
+
+.admin-row-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-row-info strong,
+.admin-row-info small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-row-info small,
+.admin-row span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.icon-danger-button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(233, 79, 100, 0.38);
+  border-radius: 8px;
+  background: rgba(233, 79, 100, 0.11);
+  color: #ffb6c2;
+}
+
+.icon-danger-button:hover:not(:disabled) {
+  border-color: rgba(233, 79, 100, 0.72);
+  background: rgba(233, 79, 100, 0.18);
+}
+
+.spin-icon {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .loading-text {
   color: #b9ebff;
 }
@@ -1272,6 +1346,18 @@ legend {
 }
 
 @media (max-width: 720px) {
+  .admin-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .admin-row > span {
+    justify-self: start;
+  }
+
+  .league-admin-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
   .toast-container {
     top: auto;
     bottom: 80px;

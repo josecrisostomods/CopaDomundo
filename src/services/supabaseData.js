@@ -15,6 +15,12 @@ function mapLeague(row, meta = {}) {
     role: meta.role || (isOwner ? "owner" : "member"),
     memberCount: meta.memberCount || 1,
     isPublic: Boolean(row.is_public),
+    settings: row.settings || {
+      outcome: 3,
+      exactScore: 2,
+      qualifier: 2,
+      qualificationMethod: 2,
+    },
   };
 }
 
@@ -24,7 +30,32 @@ function mapProfile(row) {
     username: row.username,
     name: row.name,
     avatar: row.avatar || avatarFor(row.name),
+    role: row.role || "player",
+    isAdmin: Boolean(row.is_admin || row.isAdmin || row.role === "admin"),
     displayNameSet: Boolean(row.display_name_set),
+  };
+}
+
+function mapAdminUser(row) {
+  return {
+    ...mapProfile(row),
+    leagueCount: row.leagueCount || 0,
+    predictionCount: row.predictionCount || 0,
+    createdAt: row.created_at,
+  };
+}
+
+function mapAdminLeague(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    code: row.code,
+    isPublic: Boolean(row.is_public),
+    ownerId: row.owner_id,
+    ownerName: row.owner_name || "Sem dono",
+    memberCount: row.memberCount || 0,
+    predictionCount: row.predictionCount || 0,
+    createdAt: row.created_at,
   };
 }
 
@@ -287,4 +318,74 @@ export async function saveRemoteBonusPrediction(bonus, sessionToken) {
 
   if (error) throw error;
   return mapBonusPrediction(data);
+}
+
+export async function fetchAdminState(sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("get_admin_state", {
+    session_token: sessionToken,
+  });
+
+  if (error) throw error;
+
+  return {
+    users: (data?.users || []).map(mapAdminUser),
+    leagues: (data?.leagues || []).map(mapAdminLeague),
+    totals: data?.totals || { users: 0, leagues: 0 },
+  };
+}
+
+export async function updateRemoteFixtureResult(result, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("admin_update_fixture_result", {
+    session_token: sessionToken,
+    p_fixture_id: result.fixtureId,
+    p_status: result.status,
+    p_home_score: result.homeScore,
+    p_away_score: result.awayScore,
+    p_winner_team_id: result.winnerTeamId,
+    p_classification_method: result.classificationMethod,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteRemoteUser(userId, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("admin_delete_user", {
+    session_token: sessionToken,
+    p_user_id: userId,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteRemoteLeague(leagueId, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("admin_delete_league", {
+    session_token: sessionToken,
+    p_league_id: leagueId,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function createAdminRemoteLeague(name, sessionToken, isPublic = false) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("admin_create_league", {
+    session_token: sessionToken,
+    league_name: name,
+    league_is_public: isPublic,
+  });
+
+  if (error) throw error;
+  return mapLeague(data, data);
 }

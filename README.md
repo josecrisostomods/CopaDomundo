@@ -14,6 +14,7 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 - Palpite de mata-mata: vencedor ou empate nos 90 minutos, quem passa e se passa no tempo normal, prorrogacao ou penaltis.
 - Ranking por liga com criterios de desempate.
 - Tela de perfil para o usuario editar dados e acompanhar seu resumo na liga.
+- Painel admin para editar resultados, criar/excluir ligas e excluir usuarios.
 - Funcao serverless `/api/sync-fixtures` para proteger a chave da API de futebol.
 - Persistencia no Supabase para perfil, ligas, membros, jogos e palpites quando as variaveis estiverem configuradas.
 - Escudos/logos das selecoes quando a API retornar imagem do time.
@@ -24,6 +25,7 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 
 ```bash
 npm install
+npm test
 npm run dev
 ```
 
@@ -75,7 +77,7 @@ O site atualiza partidas e placares de duas formas:
 
 1. **Enquanto alguem esta usando o site**
    - O frontend chama `/api/sync-fixtures` ao entrar.
-   - Depois repete a chamada a cada 5 minutos.
+   - Depois repete a chamada a cada 2 minutos.
    - Ao voltar para a aba do navegador, ele tenta atualizar de novo.
 
 2. **Sozinho na Vercel**
@@ -99,7 +101,7 @@ O arquivo `supabase/schema.sql` contem a estrutura inicial para:
 - palpites
 - configuracoes de pontuacao
 - logs de sincronizacao da API
-- funcoes RPC para cadastrar jogador, entrar, recuperar credenciais com codigo de validacao, criar liga, listar/entrar em ligas publicas e salvar palpite
+- funcoes RPC para cadastrar jogador, entrar, recuperar credenciais com codigo de validacao, criar liga, listar/entrar em ligas publicas, salvar palpite e executar acoes admin
 
 Para ativar:
 
@@ -108,6 +110,17 @@ Para ativar:
 3. Configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
 4. Configure `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` na Vercel para permitir que a funcao da API grave jogos.
 5. Configure as mesmas variaveis na Vercel.
+
+### Acesso admin inicial
+
+Ao rodar `supabase/schema.sql`, o banco cria ou atualiza o usuario admin:
+
+```text
+usuario: jardel
+senha: 212220
+```
+
+Esse usuario aparece com a aba **Admin** no menu. As acoes administrativas passam por RPC com validacao de sessao e papel `admin`; as tabelas sensiveis seguem bloqueadas para acesso direto pelo cliente.
 
 ## Deploy na Vercel
 
@@ -155,13 +168,16 @@ Desempate:
 ```text
 api/sync-fixtures.js        Funcao serverless para buscar jogos da API
 src/App.jsx                Telas e fluxo do produto
+src/components/AdminView.jsx Painel administrativo
 src/config/appConfig.js    Configuracoes de navegacao e armazenamento local
 src/data/mockWorldCup.js   Calendario local com jogos da Copa
 src/lib/scoring.js         Regras de pontuacao e ranking
 src/lib/supabase.js        Cliente Supabase opcional
+src/lib/validators.js      Validacoes compartilhadas de formulario
 src/styles.css             Visual mobile-first
 src/utils/formatters.js    Formatadores de datas, horarios e rotulos
 supabase/schema.sql        Banco de dados
+tests/validators.test.js   Testes dos validadores principais
 ```
 
 ## Observacoes

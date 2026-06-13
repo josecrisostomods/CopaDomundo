@@ -2,10 +2,15 @@ import React from "react";
 import { formatTime } from "../utils/formatters";
 import { navItems } from "../config/appConfig";
 
+function getVisibleNavItems(profile) {
+  return navItems.filter((item) => !item.adminOnly || profile?.isAdmin);
+}
+
 export function Header({ activeTab, activeLeague, dataState, lastSync, profile, setActiveTab, syncState, onLogout }) {
   const statusMessage = syncState.loading
     ? "Atualizando partidas..."
     : syncState.message || dataState.message || `Atualizado: ${formatTime(lastSync)}`;
+  const visibleNavItems = getVisibleNavItems(profile);
 
   return (
     <header className="topbar">
@@ -18,7 +23,7 @@ export function Header({ activeTab, activeLeague, dataState, lastSync, profile, 
       </div>
 
       <nav className="desktop-nav">
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <button
             key={item.id}
             className={activeTab === item.id ? "active" : ""}
@@ -44,10 +49,12 @@ export function Header({ activeTab, activeLeague, dataState, lastSync, profile, 
   );
 }
 
-export function BottomNav({ activeTab, setActiveTab }) {
+export function BottomNav({ activeTab, profile, setActiveTab }) {
+  const visibleNavItems = getVisibleNavItems(profile);
+
   return (
-    <nav className="bottom-nav">
-      {navItems.map((item) => (
+    <nav className="bottom-nav" style={{ "--nav-count": visibleNavItems.length }}>
+      {visibleNavItems.map((item) => (
         <button
           key={item.id}
           className={activeTab === item.id ? "active" : ""}

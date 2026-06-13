@@ -3,7 +3,14 @@ import { AUTO_SYNC_INTERVAL_MS } from "../config/appConfig";
 import { useToast } from "../components/Toast.jsx";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { DEFAULT_SCORING, buildRanking } from "../lib/scoring";
-import { fetchRemoteState } from "../services/supabaseData";
+import {
+  createAdminRemoteLeague,
+  deleteRemoteLeague,
+  deleteRemoteUser,
+  fetchAdminState,
+  fetchRemoteState,
+  updateRemoteFixtureResult,
+} from "../services/supabaseData";
 
 import { useAuth } from "../hooks/useAuth";
 import { useFixtures } from "../hooks/useFixtures";
@@ -23,6 +30,7 @@ export function useApp() {
 export function AppProvider({ children }) {
   const addToast = useToast();
   const [activeTab, setActiveTab] = useState("home");
+  const [adminState, setAdminState] = useState({ loading: false, users: [], leagues: [], totals: {}, message: "" });
   
   const {
     profile,
@@ -96,6 +104,24 @@ export function AppProvider({ children }) {
         setBonusPredictions(remote.bonusPredictions || []);
         setMembersByLeague(remote.membersByLeague || {});
         setDataState({ loading: false, message: remote.leagues.length ? "Ligas carregadas." : "Crie ou entre em uma liga." });
+
+        if (remote.profile.isAdmin) {
+          setAdminState((current) => ({ ...current, loading: true, message: "Carregando painel admin..." }));
+          try {
+            const remoteAdmin = await fetchAdminState(sessionToken);
+            if (!cancelled) setAdminState({ ...remoteAdmin, loading: false, message: "Painel admin carregado." });
+          } catch (adminError) {
+            if (!cancelled) {
+              setAdminState((current) => ({
+                ...current,
+                loading: false,
+                message: adminError.message || "Nao foi possivel carregar o painel admin.",
+              }));
+            }
+          }
+        } else {
+          setAdminState({ loading: false, users: [], leagues: [], totals: {}, message: "" });
+        }
       } catch (error) {
         if (cancelled) return;
         setDataState({
@@ -110,6 +136,12 @@ export function AppProvider({ children }) {
       cancelled = true;
     };
   }, [profile?.id, sessionToken, setDataState, setProfile, setLeagues, setPublicLeagues, setActiveLeagueId, setFixtures, setPredictions, setBonusPredictions, setMembersByLeague]);
+
+  useEffect(() => {
+    if (activeTab === "admin" && !currentUser?.isAdmin) {
+      setActiveTab("home");
+    }
+  }, [activeTab, currentUser?.isAdmin]);
 
   const users = useMemo(() => {
     if (!currentUser || !activeLeague?.id) return [];
@@ -213,6 +245,109 @@ export function AppProvider({ children }) {
     }
   }
 
+  async function refreshAdminState() {
+    if (!currentUser?.isAdmin || !sessionToken) return null;
+
+    setAdminState((current) => ({ ...current, loading: true, message: "Atualizando painel admin..." }));
+
+    try {
+      const remoteAdmin = await fetchAdminState(sessionToken);
+      setAdminState({ ...remoteAdmin, loading: false, message: "Painel admin atualizado." });
+      return remoteAdmin;
+    } catch (error) {
+      setAdminState((current) => ({
+        ...current,
+        loading: false,
+        message: error.message || "Nao foi possivel atualizar o painel admin.",
+      }));
+      addToast(error.message || "Nao foi possivel atualizar o painel admin", "error");
+      throw error;
+    }
+  }
+
+  async function adminUpdateFixtureResult(payload) {
+    try {
+      const savedFixture = await updateRemoteFixtureResult(payload, sessionToken);
+
+      setFixtures((items) =>
+        items.map((fixture) =>
+          fixture.id === savedFixture.id
+            ? {
+                ...fixture,
+                status: savedFixture.status,
+                homeScore: savedFixture.home_score,
+                awayScore: savedFixture.away_score,
+                winner: savedFixture.winner_team_id,
+                classificationMethod: savedFixture.classification_method,
+              }
+            : fixture,
+        ),
+      );
+      addToast("Resultado atualizado.", "success");
+      return savedFixture;
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel atualizar o resultado", "error");
+      throw error;
+    }
+  }
+
+  async function adminCreateLeague(name, isPublic) {
+    try {
+      const league = await createAdminRemoteLeague(name, sessionToken, isPublic);
+      setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
+      setActiveLeagueId(league.id);
+      await refreshAdminState();
+      addToast("Liga criada pelo admin.", "success");
+      return league;
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel criar a liga", "error");
+      throw error;
+    }
+  }
+
+  async function adminDeleteUser(userId) {
+    try {
+      await deleteRemoteUser(userId, sessionToken);
+      setPredictions((items) => items.filter((prediction) => prediction.userId !== userId));
+      setBonusPredictions((items) => items.filter((prediction) => prediction.userId !== userId));
+      setMembersByLeague((items) =>
+        Object.fromEntries(
+          Object.entries(items).map(([leagueId, members]) => [
+            leagueId,
+            members.filter((member) => member.id !== userId),
+          ]),
+        ),
+      );
+      await refreshAdminState();
+      addToast("Usuario excluido.", "success");
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel excluir o usuario", "error");
+      throw error;
+    }
+  }
+
+  async function adminDeleteLeague(leagueId) {
+    try {
+      await deleteRemoteLeague(leagueId, sessionToken);
+      const remainingLeagues = leagues.filter((league) => league.id !== leagueId);
+      setLeagues(remainingLeagues);
+      setPublicLeagues((items) => items.filter((league) => league.id !== leagueId));
+      setPredictions((items) => items.filter((prediction) => prediction.leagueId !== leagueId));
+      setBonusPredictions((items) => items.filter((prediction) => prediction.leagueId !== leagueId));
+      setMembersByLeague((items) => {
+        const next = { ...items };
+        delete next[leagueId];
+        return next;
+      });
+      setActiveLeagueId((current) => (current === leagueId ? remainingLeagues[0]?.id || null : current));
+      await refreshAdminState();
+      addToast("Liga excluida.", "success");
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel excluir a liga", "error");
+      throw error;
+    }
+  }
+
   useEffect(() => {
     if (!profile) return undefined;
 
@@ -255,6 +390,7 @@ export function AppProvider({ children }) {
     setBonusPredictions([]);
     setMembersByLeague({});
     setDataState({ loading: false, message: "" });
+    setAdminState({ loading: false, users: [], leagues: [], totals: {}, message: "" });
   }
 
   const value = {
@@ -276,6 +412,7 @@ export function AppProvider({ children }) {
     users,
     ranking,
     profileRank,
+    adminState,
     sessionToken,
     recoveryCode,
     clearRecoveryCode,
@@ -291,6 +428,11 @@ export function AppProvider({ children }) {
     handleSync,
     updateProfile,
     generateRecoveryCode: handleGenerateRecoveryCode,
+    refreshAdminState,
+    adminUpdateFixtureResult,
+    adminCreateLeague,
+    adminDeleteUser,
+    adminDeleteLeague,
     handleLogout,
   };
 
