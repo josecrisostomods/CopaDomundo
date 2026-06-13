@@ -40,7 +40,7 @@ export function AppProvider({ children }) {
     clearRecoveryCode,
     generateRecoveryCode,
     handlePlayerAuth: authPlayerAuth,
-    recoverAccount: authRecoverAccount,
+
     updateProfile: authUpdateProfile,
     handleLogout: authLogout,
   } = useAuth();
@@ -454,7 +454,7 @@ export function AppProvider({ children }) {
     dataState,
     lastSync,
     handlePlayerAuth,
-    recoverAccount,
+
     savePrediction,
     saveBonusPrediction,
     createLeague,
