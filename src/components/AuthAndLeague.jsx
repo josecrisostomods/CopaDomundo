@@ -166,12 +166,23 @@ export function LeagueRequired({ setActiveTab }) {
   );
 }
 
-export function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague, onJoinLeague, onSelectLeague }) {
+export function LeagueView({
+  activeLeague,
+  currentUser,
+  leagues,
+  publicLeagues = [],
+  onCreateLeague,
+  onJoinLeague,
+  onJoinPublicLeague,
+  onSelectLeague,
+}) {
   const addToast = useToast();
   const [newLeagueName, setNewLeagueName] = useState("");
+  const [leagueVisibility, setLeagueVisibility] = useState("private");
   const [inviteCode, setInviteCode] = useState("");
   const [message, setMessage] = useState("");
   const [joining, setJoining] = useState(false);
+  const [joiningPublicId, setJoiningPublicId] = useState(null);
   const canSeeActiveCode = activeLeague?.ownerId === currentUser?.id;
 
   async function handleJoinLeague() {
@@ -183,6 +194,16 @@ export function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague,
       setInviteCode("");
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function handleJoinPublicLeague(leagueId) {
+    setJoiningPublicId(leagueId);
+    try {
+      const result = await onJoinPublicLeague(leagueId);
+      setMessage(result);
+    } finally {
+      setJoiningPublicId(null);
     }
   }
 
@@ -216,12 +237,18 @@ export function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague,
             <>
               <div className={`league-code ${canSeeActiveCode ? "" : "private"}`}>
                 <span>{activeLeague.name}</span>
-                <strong>{canSeeActiveCode && activeLeague.code ? activeLeague.code : "Convite privado"}</strong>
+                <strong>
+                  {canSeeActiveCode && activeLeague.code
+                    ? activeLeague.code
+                    : activeLeague.isPublic
+                    ? "Liga publica"
+                    : "Convite privado"}
+                </strong>
               </div>
               <p className="helper-text">
-                {canSeeActiveCode
-                  ? "Compartilhe esse codigo com seus amigos para todos disputarem o mesmo ranking."
-                  : "O codigo de convite fica visivel apenas para quem criou a liga."}
+                {activeLeague.isPublic && "Essa liga aparece na lista publica para novos participantes."}
+                {!activeLeague.isPublic && canSeeActiveCode && "Compartilhe esse codigo com seus amigos para todos disputarem o mesmo ranking."}
+                {!activeLeague.isPublic && !canSeeActiveCode && "O codigo de convite fica visivel apenas para quem criou a liga."}
               </p>
               {canSeeActiveCode && activeLeague.code && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "12px" }}>
@@ -257,10 +284,31 @@ export function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague,
               maxLength={40}
             />
           </label>
+          <div className="segmented compact-segmented">
+            <button
+              type="button"
+              className={leagueVisibility === "private" ? "active" : ""}
+              onClick={() => setLeagueVisibility("private")}
+            >
+              Privada
+            </button>
+            <button
+              type="button"
+              className={leagueVisibility === "public" ? "active" : ""}
+              onClick={() => setLeagueVisibility("public")}
+            >
+              Publica
+            </button>
+          </div>
+          <p className="helper-text">
+            {leagueVisibility === "public"
+              ? "Aparece para todos os usuarios entrarem sem codigo."
+              : "Entra apenas quem receber o codigo de convite."}
+          </p>
           <button
             className="secondary-button full"
             onClick={() => {
-              onCreateLeague(newLeagueName);
+              onCreateLeague(newLeagueName, leagueVisibility === "public");
               setNewLeagueName("");
             }}
             disabled={!newLeagueName.trim()}
@@ -269,6 +317,34 @@ export function LeagueView({ activeLeague, currentUser, leagues, onCreateLeague,
           </button>
         </section>
       </div>
+
+      <section className="panel list-panel">
+        <div className="panel-title">
+          <UsersRound size={20} />
+          <h2>Ligas publicas</h2>
+        </div>
+        {publicLeagues.length > 0 ? (
+          <div className="league-list">
+            {publicLeagues.map((league) => (
+              <div key={league.id} className="league-list-item public-league-item">
+                <div className="league-list-info">
+                  <strong>{league.name}</strong>
+                  <small>{league.memberCount || 1} participante(s)</small>
+                </div>
+                <button
+                  className="secondary-button"
+                  onClick={() => handleJoinPublicLeague(league.id)}
+                  disabled={joiningPublicId === league.id}
+                >
+                  {joiningPublicId === league.id ? "Entrando..." : "Entrar"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="helper-text">Nenhuma liga publica disponivel agora.</p>
+        )}
+      </section>
 
       <div className="two-column">
         <section className="panel form-panel">

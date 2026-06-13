@@ -46,6 +46,8 @@ export function AppProvider({ children }) {
   const {
     leagues,
     setLeagues,
+    publicLeagues,
+    setPublicLeagues,
     activeLeagueId,
     setActiveLeagueId,
     activeLeague,
@@ -55,6 +57,7 @@ export function AppProvider({ children }) {
     setDataState,
     createLeague: leaguesCreateLeague,
     joinLeague: leaguesJoinLeague,
+    joinPublicLeague: leaguesJoinPublicLeague,
   } = useLeagues(sessionToken, currentUser);
 
   const {
@@ -80,6 +83,7 @@ export function AppProvider({ children }) {
 
         setProfile(remote.profile);
         setLeagues(remote.leagues);
+        setPublicLeagues(remote.publicLeagues || []);
         setActiveLeagueId((current) =>
           remote.leagues.some((league) => league.id === current) ? current : remote.leagues[0]?.id || null,
         );
@@ -102,7 +106,7 @@ export function AppProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [profile?.id, sessionToken, setDataState, setProfile, setLeagues, setActiveLeagueId, setFixtures, setPredictions, setBonusPredictions, setMembersByLeague]);
+  }, [profile?.id, sessionToken, setDataState, setProfile, setLeagues, setPublicLeagues, setActiveLeagueId, setFixtures, setPredictions, setBonusPredictions, setMembersByLeague]);
 
   const users = useMemo(() => {
     if (!currentUser || !activeLeague?.id) return [];
@@ -122,6 +126,7 @@ export function AppProvider({ children }) {
   async function handlePlayerAuth(payload, mode) {
     await authPlayerAuth(payload, mode);
     setLeagues([]);
+    setPublicLeagues([]);
     setActiveLeagueId(null);
     setPredictions([]);
     setMembersByLeague({});
@@ -148,9 +153,9 @@ export function AppProvider({ children }) {
     }
   }
 
-  async function createLeague(name) {
+  async function createLeague(name, isPublic = false) {
     try {
-      await leaguesCreateLeague(name);
+      await leaguesCreateLeague(name, isPublic);
       setActiveTab("league");
       addToast("Liga criada com sucesso!", "success");
     } catch (error) {
@@ -165,6 +170,17 @@ export function AppProvider({ children }) {
       return "Voce entrou na liga.";
     } catch (error) {
       addToast(error.message || "Codigo invalido", "error");
+      return error.message;
+    }
+  }
+
+  async function joinPublicLeague(leagueId) {
+    try {
+      const league = await leaguesJoinPublicLeague(leagueId);
+      addToast(`Entrou na liga ${league.name}!`, "success");
+      return "Voce entrou na liga.";
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel entrar na liga", "error");
       return error.message;
     }
   }
@@ -220,6 +236,7 @@ export function AppProvider({ children }) {
   async function handleLogout() {
     await authLogout();
     setLeagues([]);
+    setPublicLeagues([]);
     setActiveLeagueId(null);
     setPredictions([]);
     setBonusPredictions([]);
@@ -233,6 +250,7 @@ export function AppProvider({ children }) {
     activeTab,
     setActiveTab,
     leagues,
+    publicLeagues,
     activeLeague,
     activeLeagueId,
     setActiveLeagueId,
@@ -254,6 +272,7 @@ export function AppProvider({ children }) {
     saveBonusPrediction,
     createLeague,
     joinLeague,
+    joinPublicLeague,
     handleSync,
     updateProfile,
     handleLogout,

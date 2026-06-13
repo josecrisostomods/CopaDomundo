@@ -16,6 +16,7 @@ function AppContent() {
     activeTab,
     setActiveTab,
     leagues,
+    publicLeagues,
     activeLeague,
     setActiveLeagueId,
     fixtures,
@@ -32,6 +33,7 @@ function AppContent() {
     saveBonusPrediction,
     createLeague,
     joinLeague,
+    joinPublicLeague,
     updateProfile,
     handleLogout,
   } = useApp();
@@ -115,8 +117,10 @@ function AppContent() {
             activeLeague={activeLeague}
             currentUser={currentUser}
             leagues={leagues}
+            publicLeagues={publicLeagues}
             onCreateLeague={createLeague}
             onJoinLeague={joinLeague}
+            onJoinPublicLeague={joinPublicLeague}
             onSelectLeague={setActiveLeagueId}
           />
         )}

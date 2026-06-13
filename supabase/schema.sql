@@ -35,9 +35,12 @@ create table if not exists public.leagues (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text unique not null,
+  is_public boolean not null default false,
   owner_id uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+alter table public.leagues add column if not exists is_public boolean not null default false;
 
 create table if not exists public.league_members (
   league_id uuid references public.leagues(id) on delete cascade,
@@ -194,7 +197,9 @@ create policy "sync_logs_no_client_read" on public.api_sync_logs
   for select using (false);
 
 drop function if exists public.create_league_with_owner(text);
+drop function if exists public.create_league_with_owner(text, text);
 drop function if exists public.join_league_by_code(text);
+drop function if exists public.join_public_league(text, uuid);
 
 create or replace function public.player_payload(player public.profiles)
 returns jsonb
@@ -397,6 +402,7 @@ declare
   current_player_id uuid;
   current_player public.profiles;
   leagues_json jsonb;
+  public_leagues_json jsonb;
   members_json jsonb;
   predictions_json jsonb;
   bonus_predictions_json jsonb;
@@ -412,6 +418,7 @@ begin
     'id', league_data.id,
     'name', league_data.name,
     'code', case when league_data.owner_id = current_player_id then league_data.code else null end,
+    'is_public', league_data.is_public,
     'owner_id', league_data.owner_id,
     'role', league_data.role,
     'memberCount', league_data.member_count,
@@ -428,6 +435,7 @@ begin
       l.id,
       l.name,
       l.code,
+      l.is_public,
       l.owner_id,
       l.created_at,
       lm.role,
@@ -441,6 +449,44 @@ begin
     left join public.league_settings ls on ls.league_id = l.id
     where lm.user_id = current_player_id
   ) league_data;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', public_league_data.id,
+    'name', public_league_data.name,
+    'code', null,
+    'is_public', true,
+    'owner_id', public_league_data.owner_id,
+    'role', 'public',
+    'memberCount', public_league_data.member_count,
+    'settings', jsonb_build_object(
+      'outcome', coalesce(public_league_data.points_outcome, 3),
+      'exactScore', coalesce(public_league_data.points_exact_score, 2),
+      'qualifier', coalesce(public_league_data.points_qualifier, 2),
+      'qualificationMethod', coalesce(public_league_data.points_qualification_method, 2)
+    )
+  ) order by public_league_data.member_count desc, public_league_data.created_at desc), '[]'::jsonb)
+  into public_leagues_json
+  from (
+    select
+      l.id,
+      l.name,
+      l.owner_id,
+      l.created_at,
+      ls.points_outcome,
+      ls.points_exact_score,
+      ls.points_qualifier,
+      ls.points_qualification_method,
+      (select count(*)::int from public.league_members count_lm where count_lm.league_id = l.id) as member_count
+    from public.leagues l
+    left join public.league_settings ls on ls.league_id = l.id
+    where l.is_public = true
+    and not exists (
+      select 1
+      from public.league_members lm
+      where lm.league_id = l.id
+      and lm.user_id = current_player_id
+    )
+  ) public_league_data;
 
   select coalesce(jsonb_agg(jsonb_build_object(
     'leagueId', member_data.league_id,
@@ -488,6 +534,7 @@ begin
   return jsonb_build_object(
     'profile', public.player_payload(current_player),
     'leagues', leagues_json,
+    'publicLeagues', public_leagues_json,
     'members', members_json,
     'predictions', predictions_json,
     'bonusPredictions', bonus_predictions_json
@@ -495,7 +542,7 @@ begin
 end;
 $$;
 
-create or replace function public.create_league_with_owner(session_token text, league_name text)
+create or replace function public.create_league_with_owner(session_token text, league_name text, league_is_public boolean default false)
 returns jsonb
 language plpgsql
 security definer
@@ -513,8 +560,8 @@ begin
     exit when not exists (select 1 from public.leagues where code = new_code);
   end loop;
 
-  insert into public.leagues (name, code, owner_id)
-  values (coalesce(nullif(trim(league_name), ''), 'Minha liga'), new_code, current_player_id)
+  insert into public.leagues (name, code, is_public, owner_id)
+  values (coalesce(nullif(trim(league_name), ''), 'Minha liga'), new_code, coalesce(league_is_public, false), current_player_id)
   returning * into new_league;
 
   insert into public.league_members (league_id, user_id, role)
@@ -529,6 +576,7 @@ begin
     'id', new_league.id,
     'name', new_league.name,
     'code', new_league.code,
+    'is_public', new_league.is_public,
     'owner_id', new_league.owner_id,
     'role', 'owner',
     'memberCount', 1
@@ -579,6 +627,59 @@ begin
     'id', target_league.id,
     'name', target_league.name,
     'code', case when target_league.owner_id = current_player_id then target_league.code else null end,
+    'is_public', target_league.is_public,
+    'owner_id', target_league.owner_id,
+    'role', target_role,
+    'memberCount', target_member_count
+  );
+end;
+$$;
+
+create or replace function public.join_public_league(session_token text, p_league_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_player_id uuid;
+  target_league public.leagues;
+  target_role text;
+  target_member_count int;
+begin
+  current_player_id := public.player_id_from_session(session_token);
+
+  select *
+  into target_league
+  from public.leagues
+  where id = p_league_id
+  and is_public = true
+  limit 1;
+
+  if target_league.id is null then
+    raise exception 'Liga publica nao encontrada';
+  end if;
+
+  insert into public.league_members (league_id, user_id, role)
+  values (target_league.id, current_player_id, 'member')
+  on conflict (league_id, user_id) do nothing;
+
+  select role
+  into target_role
+  from public.league_members
+  where league_id = target_league.id
+  and user_id = current_player_id;
+
+  select count(*)::int
+  into target_member_count
+  from public.league_members
+  where league_id = target_league.id;
+
+  return jsonb_build_object(
+    'id', target_league.id,
+    'name', target_league.name,
+    'code', case when target_league.owner_id = current_player_id then target_league.code else null end,
+    'is_public', target_league.is_public,
     'owner_id', target_league.owner_id,
     'role', target_role,
     'memberCount', target_member_count
@@ -738,8 +839,9 @@ grant execute on function public.register_player(text, text) to anon, authentica
 grant execute on function public.login_player(text, text) to anon, authenticated;
 grant execute on function public.update_player_profile(text, text) to anon, authenticated;
 grant execute on function public.get_player_state(text) to anon, authenticated;
-grant execute on function public.create_league_with_owner(text, text) to anon, authenticated;
+grant execute on function public.create_league_with_owner(text, text, boolean) to anon, authenticated;
 grant execute on function public.join_league_by_code(text, text) to anon, authenticated;
+grant execute on function public.join_public_league(text, uuid) to anon, authenticated;
 grant execute on function public.save_player_prediction(text, uuid, text, text, int, int, text, text, int, int, int, int) to anon, authenticated;
 grant execute on function public.save_bonus_prediction(text, uuid, text, text, text) to anon, authenticated;
 grant execute on function public.logout_player(text) to anon, authenticated;

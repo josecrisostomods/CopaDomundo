@@ -932,7 +932,8 @@ legend {
   gap: 13px;
 }
 
-.league-list button {
+.league-list button,
+.league-list-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -941,7 +942,14 @@ legend {
   padding: 0 12px;
 }
 
-.league-list span {
+.league-list-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.league-list span,
+.league-list-info {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -949,13 +957,16 @@ legend {
 }
 
 .league-list span strong,
-.league-list span small {
+.league-list span small,
+.league-list-info strong,
+.league-list-info small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.league-list span small {
+.league-list span small,
+.league-list-info small {
   color: var(--text-soft);
   font-size: 0.76rem;
   font-weight: 800;
@@ -968,6 +979,16 @@ legend {
 .league-list b {
   color: var(--gold);
   font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.public-league-item {
+  padding-block: 10px;
+}
+
+.public-league-item .secondary-button {
+  min-height: 38px;
+  padding-inline: 13px;
   white-space: nowrap;
 }
 

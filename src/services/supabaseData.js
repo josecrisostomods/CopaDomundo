@@ -14,6 +14,7 @@ function mapLeague(row, meta = {}) {
     ownerId: row.owner_id,
     role: meta.role || (isOwner ? "owner" : "member"),
     memberCount: meta.memberCount || 1,
+    isPublic: Boolean(row.is_public),
   };
 }
 
@@ -143,12 +144,13 @@ export async function loginPlayer({ username, password }) {
   return mapAuthPayload(data);
 }
 
-export async function createRemoteLeague(name, sessionToken) {
+export async function createRemoteLeague(name, sessionToken, isPublic = false) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 
   const { data, error } = await supabase.rpc("create_league_with_owner", {
     session_token: sessionToken,
     league_name: name || "Minha liga",
+    league_is_public: isPublic,
   });
 
   if (error) throw error;
@@ -161,6 +163,18 @@ export async function joinRemoteLeague(code, sessionToken) {
   const { data, error } = await supabase.rpc("join_league_by_code", {
     session_token: sessionToken,
     invite_code: code.trim().toUpperCase(),
+  });
+
+  if (error) throw error;
+  return mapLeague(data, data);
+}
+
+export async function joinPublicRemoteLeague(leagueId, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("join_public_league", {
+    session_token: sessionToken,
+    p_league_id: leagueId,
   });
 
   if (error) throw error;
@@ -205,6 +219,7 @@ export async function fetchRemoteState(sessionToken) {
   return {
     profile: mapProfile(state.profile),
     leagues: (state.leagues || []).map((league) => mapLeague(league, league)),
+    publicLeagues: (state.publicLeagues || []).map((league) => mapLeague(league, league)),
     fixtures: (fixturesResult.data || []).map((fixture) => mapFixture(fixture, teamMap)),
     predictions: (state.predictions || []).map(mapPrediction),
     bonusPredictions: (state.bonusPredictions || []).map(mapBonusPrediction),
