@@ -137,6 +137,8 @@ function AppContent() {
             profileRank={profileRank}
             syncState={syncState}
             userPredictions={userPredictions}
+            bonusPredictions={bonusPredictions || []}
+            fixtures={fixtures}
           />
         )}
       </main>
