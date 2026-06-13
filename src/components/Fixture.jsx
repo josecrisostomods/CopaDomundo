@@ -116,8 +116,9 @@ export function FixtureCard({ fixture, prediction, onSavePrediction, settings })
           prediction={prediction}
           closed={closed}
           onSubmit={(form) => {
-            onSavePrediction(fixture, form);
-            setExpanded(false);
+            onSavePrediction(fixture, form)
+              .then(() => setExpanded(false))
+              .catch((err) => alert("Erro ao salvar palpite: " + err.message));
           }}
         />
       )}
