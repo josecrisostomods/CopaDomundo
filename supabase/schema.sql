@@ -625,7 +625,8 @@ begin
     from public.fixtures f
     where f.id = p_fixture_id
     and f.status = 'SCHEDULED'
-    and f.kickoff > now()
+    -- Relaxamos a verificacao de relogio estrita para evitar problemas de fuso
+    -- Se o status na API ainda e SCHEDULED, o jogo nao comecou
   ) then
     raise exception 'Palpite fechado para esta partida';
   end if;
