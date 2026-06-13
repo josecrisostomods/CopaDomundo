@@ -4,10 +4,28 @@ import { readStorage, writeStorage, makeId } from "../lib/storage";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { saveRemotePrediction, saveRemoteBonusPrediction } from "../services/supabaseData";
 
+function normalizeStoredPredictions(items) {
+  const byUserAndFixture = new Map();
+
+  for (const prediction of items) {
+    if (prediction.leagueId === "league-demo") continue;
+    const key = `${prediction.userId}:${prediction.fixtureId}`;
+    const current = byUserAndFixture.get(key);
+    const currentTime = current?.updatedAt ? new Date(current.updatedAt).getTime() : 0;
+    const nextTime = prediction.updatedAt ? new Date(prediction.updatedAt).getTime() : 0;
+
+    if (!current || nextTime >= currentTime) {
+      byUserAndFixture.set(key, { ...prediction, leagueId: null });
+    }
+  }
+
+  return Array.from(byUserAndFixture.values());
+}
+
 function getInitialPredictions() {
   const storedPredictions = readStorage(STORAGE.predictions, []);
   if (!Array.isArray(storedPredictions)) return [];
-  return storedPredictions.filter((prediction) => prediction.leagueId !== "league-demo");
+  return normalizeStoredPredictions(storedPredictions);
 }
 
 export function usePredictions(sessionToken, currentUser, activeLeague) {
@@ -17,20 +35,19 @@ export function usePredictions(sessionToken, currentUser, activeLeague) {
   useEffect(() => writeStorage(STORAGE.predictions, predictions), [predictions]);
 
   async function savePrediction(fixture, form) {
-    if (!activeLeague || !currentUser) {
-      throw new Error("Entre em uma liga antes de enviar palpites.");
+    if (!currentUser) {
+      throw new Error("Entre na sua conta antes de enviar palpites.");
     }
 
     const existing = predictions.find(
       (prediction) =>
         prediction.fixtureId === fixture.id &&
-        prediction.userId === currentUser.id &&
-        prediction.leagueId === activeLeague.id,
+        prediction.userId === currentUser.id,
     );
 
     const nextPrediction = {
       id: existing?.id || makeId("prediction"),
-      leagueId: activeLeague.id,
+      leagueId: null,
       userId: currentUser.id,
       fixtureId: fixture.id,
       normalOutcome: form.normalOutcome,

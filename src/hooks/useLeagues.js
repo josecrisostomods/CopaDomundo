@@ -2,7 +2,12 @@ import { useState, useEffect } from "react";
 import { STORAGE } from "../config/appConfig";
 import { readStorage, writeStorage } from "../lib/storage";
 import { isSupabaseConfigured } from "../lib/supabase";
-import { createRemoteLeague, joinPublicRemoteLeague, joinRemoteLeague } from "../services/supabaseData";
+import {
+  createRemoteLeague,
+  joinPublicRemoteLeague,
+  joinRemoteLeague,
+  removeRemoteLeagueMember,
+} from "../services/supabaseData";
 
 function getInitialLeagues() {
   const storedLeagues = readStorage(STORAGE.leagues, []);
@@ -105,6 +110,35 @@ export function useLeagues(sessionToken, currentUser) {
     }
   }
 
+  async function removeLeagueMember(leagueId, userId) {
+    if (!isSupabaseConfigured || !currentUser) {
+      throw new Error("Nao foi possivel remover participante agora.");
+    }
+
+    try {
+      const result = await removeRemoteLeagueMember({ leagueId, userId }, sessionToken);
+      setMembersByLeague((items) => ({
+        ...items,
+        [leagueId]: (items[leagueId] || []).filter((user) => user.id !== userId),
+      }));
+      setLeagues((items) =>
+        items.map((league) =>
+          league.id === leagueId
+            ? { ...league, memberCount: result.memberCount ?? Math.max((league.memberCount || 1) - 1, 1) }
+            : league,
+        ),
+      );
+      setDataState({ loading: false, message: "Participante removido." });
+      return result;
+    } catch (error) {
+      setDataState({
+        loading: false,
+        message: `${error.message} Nao foi possivel remover o participante.`,
+      });
+      throw error;
+    }
+  }
+
   return {
     leagues,
     setLeagues,
@@ -120,5 +154,6 @@ export function useLeagues(sessionToken, currentUser) {
     createLeague,
     joinLeague,
     joinPublicLeague,
+    removeLeagueMember,
   };
 }

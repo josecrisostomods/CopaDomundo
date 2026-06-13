@@ -119,6 +119,29 @@ create table if not exists public.predictions (
   unique (league_id, user_id, fixture_id)
 );
 
+alter table public.predictions drop constraint if exists predictions_league_id_user_id_fixture_id_key;
+
+with ranked_predictions as (
+  select
+    ctid,
+    row_number() over (
+      partition by user_id, fixture_id
+      order by updated_at desc, created_at desc, id desc
+    ) as row_number
+  from public.predictions
+)
+delete from public.predictions p
+using ranked_predictions ranked
+where p.ctid = ranked.ctid
+and ranked.row_number > 1;
+
+update public.predictions
+set league_id = null
+where league_id is not null;
+
+create unique index if not exists predictions_user_fixture_unique
+on public.predictions (user_id, fixture_id);
+
 create table if not exists public.league_settings (
   league_id uuid primary key references public.leagues(id) on delete cascade,
   points_outcome int not null default 3,
@@ -216,6 +239,7 @@ drop function if exists public.create_league_with_owner(text);
 drop function if exists public.create_league_with_owner(text, text);
 drop function if exists public.join_league_by_code(text);
 drop function if exists public.join_public_league(text, uuid);
+drop function if exists public.remove_league_member(text, uuid, uuid);
 drop function if exists public.reset_player_credentials(text, text, text);
 drop function if exists public.rotate_player_recovery_code(text);
 drop function if exists public.get_admin_state(text);
@@ -616,7 +640,16 @@ begin
       l.*,
       owner.name as owner_name,
       (select count(*)::int from public.league_members lm where lm.league_id = l.id) as member_count,
-      (select count(*)::int from public.predictions pr where pr.league_id = l.id) as prediction_count
+      (
+        select count(*)::int
+        from public.predictions pr
+        where exists (
+          select 1
+          from public.league_members lm
+          where lm.league_id = l.id
+          and lm.user_id = pr.user_id
+        )
+      ) as prediction_count
     from public.leagues l
     left join public.profiles owner on owner.id = l.owner_id
   ) league_data;
@@ -1025,11 +1058,14 @@ begin
   select coalesce(jsonb_agg(to_jsonb(pr) order by pr.updated_at desc), '[]'::jsonb)
   into predictions_json
   from public.predictions pr
-  where exists (
+  where pr.user_id = current_player_id
+  or exists (
     select 1
-    from public.league_members lm
-    where lm.league_id = pr.league_id
-    and lm.user_id = current_player_id
+    from public.league_members viewer
+    join public.league_members same_league_member
+      on same_league_member.league_id = viewer.league_id
+    where viewer.user_id = current_player_id
+    and same_league_member.user_id = pr.user_id
   );
 
   select coalesce(jsonb_agg(to_jsonb(bp) order by bp.updated_at desc), '[]'::jsonb)
@@ -1061,10 +1097,26 @@ set search_path = public
 as $$
 declare
   current_player_id uuid;
+  current_player_role text;
+  owned_league_count int;
   new_code text;
   new_league public.leagues;
 begin
   current_player_id := public.player_id_from_session(session_token);
+
+  select role
+  into current_player_role
+  from public.profiles
+  where id = current_player_id;
+
+  select count(*)::int
+  into owned_league_count
+  from public.leagues
+  where owner_id = current_player_id;
+
+  if current_player_role <> 'admin' and owned_league_count >= 3 then
+    raise exception 'Voce pode criar no maximo 3 ligas';
+  end if;
 
   loop
     new_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
@@ -1198,6 +1250,92 @@ begin
 end;
 $$;
 
+create or replace function public.remove_league_member(
+  session_token text,
+  p_league_id uuid,
+  p_user_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_player_id uuid;
+  current_player_role text;
+  target_league public.leagues;
+  target_member public.profiles;
+  target_member_count int;
+begin
+  current_player_id := public.player_id_from_session(session_token);
+
+  select role
+  into current_player_role
+  from public.profiles
+  where id = current_player_id;
+
+  select *
+  into target_league
+  from public.leagues
+  where id = p_league_id
+  limit 1;
+
+  if target_league.id is null then
+    raise exception 'Liga nao encontrada';
+  end if;
+
+  if current_player_role <> 'admin' and target_league.owner_id <> current_player_id then
+    raise exception 'Apenas o dono da liga pode remover participantes';
+  end if;
+
+  if p_user_id = current_player_id then
+    raise exception 'Voce nao pode remover a propria conta da liga';
+  end if;
+
+  select *
+  into target_member
+  from public.profiles
+  where id = p_user_id
+  limit 1;
+
+  if target_member.id is null then
+    raise exception 'Usuario nao encontrado';
+  end if;
+
+  if not exists (
+    select 1
+    from public.league_members lm
+    where lm.league_id = target_league.id
+    and lm.user_id = target_member.id
+  ) then
+    raise exception 'Usuario nao participa dessa liga';
+  end if;
+
+  if target_league.owner_id = target_member.id then
+    raise exception 'O dono da liga nao pode ser removido';
+  end if;
+
+  delete from public.user_bonus_predictions
+  where league_id = target_league.id
+  and user_id = target_member.id;
+
+  delete from public.league_members
+  where league_id = target_league.id
+  and user_id = target_member.id;
+
+  select count(*)::int
+  into target_member_count
+  from public.league_members
+  where league_id = target_league.id;
+
+  return jsonb_build_object(
+    'leagueId', target_league.id,
+    'removedUserId', target_member.id,
+    'memberCount', target_member_count
+  );
+end;
+$$;
+
 create or replace function public.ensure_fixture_for_prediction(
   session_token text,
   p_league_id uuid,
@@ -1229,7 +1367,7 @@ declare
 begin
   current_player_id := public.player_id_from_session(session_token);
 
-  if not exists (
+  if p_league_id is not null and not exists (
     select 1
     from public.league_members lm
     where lm.league_id = p_league_id
@@ -1394,7 +1532,7 @@ declare
 begin
   current_player_id := public.player_id_from_session(session_token);
 
-  if not exists (
+  if p_league_id is not null and not exists (
     select 1
     from public.league_members lm
     where lm.league_id = p_league_id
@@ -1430,7 +1568,7 @@ begin
     updated_at
   )
   values (
-    p_league_id,
+    null,
     current_player_id,
     p_fixture_id,
     p_normal_outcome,
@@ -1444,8 +1582,9 @@ begin
     p_penalties_away,
     now()
   )
-  on conflict (league_id, user_id, fixture_id) do update
+  on conflict (user_id, fixture_id) do update
   set
+    league_id = null,
     normal_outcome = excluded.normal_outcome,
     home_score = excluded.home_score,
     away_score = excluded.away_score,
@@ -1526,6 +1665,7 @@ grant execute on function public.get_player_state(text) to anon, authenticated;
 grant execute on function public.create_league_with_owner(text, text, boolean) to anon, authenticated;
 grant execute on function public.join_league_by_code(text, text) to anon, authenticated;
 grant execute on function public.join_public_league(text, uuid) to anon, authenticated;
+grant execute on function public.remove_league_member(text, uuid, uuid) to anon, authenticated;
 grant execute on function public.ensure_fixture_for_prediction(text, uuid, jsonb) to anon, authenticated;
 grant execute on function public.save_player_prediction(text, uuid, text, text, int, int, text, text, int, int, int, int) to anon, authenticated;
 grant execute on function public.save_bonus_prediction(text, uuid, text, text, text) to anon, authenticated;

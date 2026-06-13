@@ -50,7 +50,9 @@ export function RankingView({ activeLeague, ranking: globalRanking, fixtures, pr
       <div className="ranking-header-selector" style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--panel-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '8px' }}>
         <Trophy size={28} style={{ color: 'var(--primary-color)' }} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <h2 style={{ fontSize: '1rem', margin: 0, color: 'var(--text-secondary)' }}>Ranking da Liga</h2>
+          <h2 style={{ fontSize: '1rem', margin: 0, color: 'var(--text-secondary)' }}>
+            {activeLeague ? "Ranking da Liga" : "Ranking geral"}
+          </h2>
           {leagues.length > 1 ? (
             <select
               value={activeLeague?.id || ""}
@@ -72,7 +74,9 @@ export function RankingView({ activeLeague, ranking: globalRanking, fixtures, pr
               ))}
             </select>
           ) : (
-            <strong style={{ fontSize: '1.2rem', color: 'var(--text-color)' }}>{activeLeague?.name}</strong>
+            <strong style={{ fontSize: '1.2rem', color: 'var(--text-color)' }}>
+              {activeLeague?.name || "Seus pontos"}
+            </strong>
           )}
         </div>
       </div>
@@ -111,9 +115,9 @@ export function RankingView({ activeLeague, ranking: globalRanking, fixtures, pr
       </div>
 
       <div className="stats-grid">
-        <StatCard icon={UsersRound} label="Participantes" value={ranking.length} hint="nesta liga" />
+        <StatCard icon={UsersRound} label="Participantes" value={ranking.length} hint={activeLeague ? "nesta liga" : "ranking pessoal"} />
         <StatCard icon={CheckCircle2} label="Jogos finalizados" value={finished} hint="pontuando agora" />
-        <StatCard icon={ClipboardList} label="Palpites" value={predictions.length} hint="enviados na liga" />
+        <StatCard icon={ClipboardList} label="Palpites" value={predictions.length} hint={activeLeague ? "valendo na liga" : "salvos no perfil"} />
         <StatCard icon={Medal} label="Pontos somados" value={totalPoints} hint="todos os jogadores" />
       </div>
 

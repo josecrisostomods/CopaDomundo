@@ -12,7 +12,9 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 - Calendario com 104 jogos salvos no app para garantir navegacao mesmo antes da API responder.
 - Palpite de fase de grupos: vencedor, empate e placar exato.
 - Palpite de mata-mata: vencedor ou empate nos 90 minutos, quem passa e se passa no tempo normal, prorrogacao ou penaltis.
+- Palpites salvos por usuario: o mesmo palpite vale em todas as ligas onde a pessoa participa.
 - Ranking por liga com criterios de desempate.
+- Pontuacao preservada mesmo antes de entrar em uma liga.
 - Tela de perfil para o usuario editar dados e acompanhar seu resumo na liga.
 - Painel admin para editar resultados, criar/excluir ligas e excluir usuarios.
 - Funcao serverless `/api/sync-fixtures` para proteger a chave da API de futebol.
@@ -98,7 +100,7 @@ O arquivo `supabase/schema.sql` contem a estrutura inicial para:
 - participantes
 - selecoes
 - jogos
-- palpites
+- palpites globais por usuario e jogo
 - configuracoes de pontuacao
 - logs de sincronizacao da API
 - funcoes RPC para cadastrar jogador, entrar, recuperar credenciais com codigo de validacao, criar liga, listar/entrar em ligas publicas, salvar palpite e executar acoes admin
@@ -185,4 +187,5 @@ tests/validators.test.js   Testes dos validadores principais
 - Use sempre a palavra **palpite**, nao aposta.
 - O app nao e PWA e nao precisa ser instalado no celular.
 - A prioridade e funcionar muito bem no navegador mobile.
+- O palpite de cada jogo pertence ao usuario, nao a uma liga especifica. Ao entrar em uma nova liga, os palpites ja feitos passam a contar no ranking daquela liga.
 - Se a API nao trouxer prorrogacao ou penaltis, esses campos ficam como `A definir` ate a sincronizacao trazer dados completos.

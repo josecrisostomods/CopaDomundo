@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronRight, Link2, Edit3, Share2, Copy, UsersRound, CheckCircle2, ShieldCheck } from "lucide-react";
+import { ChevronRight, Link2, Edit3, Share2, Copy, UsersRound, CheckCircle2, ShieldCheck, UserMinus } from "lucide-react";
 import { useToast } from "./Toast.jsx";
 import { ScreenHeading } from "./Shared.jsx";
 
@@ -244,10 +244,12 @@ export function LeagueView({
   activeLeague,
   currentUser,
   leagues,
+  members = [],
   publicLeagues = [],
   onCreateLeague,
   onJoinLeague,
   onJoinPublicLeague,
+  onRemoveLeagueMember,
   onSelectLeague,
 }) {
   const addToast = useToast();
@@ -257,7 +259,11 @@ export function LeagueView({
   const [message, setMessage] = useState("");
   const [joining, setJoining] = useState(false);
   const [joiningPublicId, setJoiningPublicId] = useState(null);
+  const [removingMemberId, setRemovingMemberId] = useState(null);
   const canSeeActiveCode = activeLeague?.ownerId === currentUser?.id;
+  const canManageActiveMembers = canSeeActiveCode || currentUser?.isAdmin;
+  const createdLeaguesCount = leagues.filter((league) => league.ownerId === currentUser?.id).length;
+  const reachedLeagueLimit = !currentUser?.isAdmin && createdLeaguesCount >= 3;
 
   async function handleJoinLeague() {
     if (!inviteCode.trim()) return;
@@ -291,6 +297,20 @@ export function LeagueView({
     if (!activeLeague?.code) return;
     const text = `Vem pro meu bolao da Copa! O codigo da liga '${activeLeague.name}' e: ${activeLeague.code}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+  }
+
+  async function handleRemoveMember(member) {
+    if (!activeLeague || !onRemoveLeagueMember) return;
+    const confirmed = window.confirm(`Remover ${member.name} da liga ${activeLeague.name}?`);
+    if (!confirmed) return;
+
+    setRemovingMemberId(member.id);
+    try {
+      await onRemoveLeagueMember(activeLeague.id, member.id);
+      setMessage(`${member.name} foi removido da liga.`);
+    } finally {
+      setRemovingMemberId(null);
+    }
   }
 
   return (
@@ -375,7 +395,9 @@ export function LeagueView({
             </button>
           </div>
           <p className="helper-text">
-            {leagueVisibility === "public"
+            {reachedLeagueLimit
+              ? "Voce ja criou 3 ligas. Entre em outras por convite ou liga publica."
+              : leagueVisibility === "public"
               ? "Aparece para todos os usuarios entrarem sem codigo."
               : "Entra apenas quem receber o codigo de convite."}
           </p>
@@ -385,12 +407,52 @@ export function LeagueView({
               onCreateLeague(newLeagueName, leagueVisibility === "public");
               setNewLeagueName("");
             }}
-            disabled={!newLeagueName.trim()}
+            disabled={!newLeagueName.trim() || reachedLeagueLimit}
           >
             Criar liga
           </button>
         </section>
       </div>
+
+      {activeLeague && (
+        <section className="panel list-panel">
+          <div className="panel-title">
+            <UsersRound size={20} />
+            <h2>Participantes da liga</h2>
+          </div>
+          <div className="league-list">
+            {members.map((member) => {
+              const isOwner = member.id === activeLeague.ownerId;
+              const canRemove = canManageActiveMembers && member.id !== currentUser?.id && !isOwner;
+
+              return (
+                <div key={member.id} className="league-list-item member-list-item">
+                  <div className="history-user">
+                    <div className="avatar profile-avatar-mini">{member.avatar}</div>
+                    <div className="league-list-info">
+                      <strong>{member.name}</strong>
+                      <small>@{member.username}{isOwner ? " - dono" : ""}</small>
+                    </div>
+                  </div>
+                  {canRemove ? (
+                    <button
+                      className="icon-danger-button"
+                      type="button"
+                      onClick={() => handleRemoveMember(member)}
+                      disabled={removingMemberId === member.id}
+                      title="Remover participante"
+                    >
+                      <UserMinus size={17} />
+                    </button>
+                  ) : (
+                    <b>{isOwner ? "Dono" : "Membro"}</b>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="panel list-panel">
         <div className="panel-title">

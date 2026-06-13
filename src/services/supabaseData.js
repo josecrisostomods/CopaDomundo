@@ -267,6 +267,19 @@ export async function joinPublicRemoteLeague(leagueId, sessionToken) {
   return mapLeague(data, data);
 }
 
+export async function removeRemoteLeagueMember({ leagueId, userId }, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("remove_league_member", {
+    session_token: sessionToken,
+    p_league_id: leagueId,
+    p_user_id: userId,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
 export async function fetchRemoteState(sessionToken) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 

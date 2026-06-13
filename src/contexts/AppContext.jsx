@@ -69,6 +69,7 @@ export function AppProvider({ children }) {
     createLeague: leaguesCreateLeague,
     joinLeague: leaguesJoinLeague,
     joinPublicLeague: leaguesJoinPublicLeague,
+    removeLeagueMember: leaguesRemoveLeagueMember,
   } = useLeagues(sessionToken, currentUser);
 
   const {
@@ -144,14 +145,18 @@ export function AppProvider({ children }) {
   }, [activeTab, currentUser?.isAdmin]);
 
   const users = useMemo(() => {
-    if (!currentUser || !activeLeague?.id) return [];
+    if (!currentUser) return [];
+    if (!activeLeague?.id) return [currentUser];
     const leagueMembers = membersByLeague[activeLeague.id] || [];
     const withoutCurrent = leagueMembers.filter((user) => user.id !== currentUser.id);
     return [currentUser, ...withoutCurrent];
   }, [activeLeague?.id, currentUser, membersByLeague]);
 
-  const leaguePredictions = predictions.filter((prediction) => prediction.leagueId === activeLeague?.id);
-  const userPredictions = leaguePredictions.filter((prediction) => prediction.userId === currentUser?.id);
+  const leagueUserIds = new Set(users.map((user) => user.id));
+  const leaguePredictions = activeLeague
+    ? predictions.filter((prediction) => leagueUserIds.has(prediction.userId))
+    : predictions.filter((prediction) => prediction.userId === currentUser?.id);
+  const userPredictions = predictions.filter((prediction) => prediction.userId === currentUser?.id);
   const ranking = useMemo(
     () => buildRanking(users, fixtures, leaguePredictions, activeLeague?.settings || DEFAULT_SCORING),
     [users, fixtures, leaguePredictions, activeLeague?.settings],
@@ -217,6 +222,19 @@ export function AppProvider({ children }) {
     } catch (error) {
       addToast(error.message || "Nao foi possivel entrar na liga", "error");
       return error.message;
+    }
+  }
+
+  async function removeLeagueMember(leagueId, userId) {
+    try {
+      await leaguesRemoveLeagueMember(leagueId, userId);
+      setBonusPredictions((items) =>
+        items.filter((prediction) => prediction.leagueId !== leagueId || prediction.userId !== userId),
+      );
+      addToast("Participante removido da liga.", "success");
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel remover o participante", "error");
+      throw error;
     }
   }
 
@@ -332,7 +350,6 @@ export function AppProvider({ children }) {
       const remainingLeagues = leagues.filter((league) => league.id !== leagueId);
       setLeagues(remainingLeagues);
       setPublicLeagues((items) => items.filter((league) => league.id !== leagueId));
-      setPredictions((items) => items.filter((prediction) => prediction.leagueId !== leagueId));
       setBonusPredictions((items) => items.filter((prediction) => prediction.leagueId !== leagueId));
       setMembersByLeague((items) => {
         const next = { ...items };
@@ -425,6 +442,7 @@ export function AppProvider({ children }) {
     createLeague,
     joinLeague,
     joinPublicLeague,
+    removeLeagueMember,
     handleSync,
     updateProfile,
     generateRecoveryCode: handleGenerateRecoveryCode,

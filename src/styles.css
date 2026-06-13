@@ -1035,6 +1035,16 @@ legend {
   white-space: nowrap;
 }
 
+.member-list-item {
+  min-height: 58px;
+}
+
+.member-list-item .history-user {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
 .empty-state.compact {
   min-height: 130px;
   box-shadow: none;

@@ -22,6 +22,7 @@ function AppContent() {
     publicLeagues,
     activeLeague,
     setActiveLeagueId,
+    membersByLeague,
     fixtures,
     bonusPredictions,
     userPredictions,
@@ -38,6 +39,7 @@ function AppContent() {
     createLeague,
     joinLeague,
     joinPublicLeague,
+    removeLeagueMember,
     updateProfile,
     generateRecoveryCode,
     refreshAdminState,
@@ -88,17 +90,13 @@ function AppContent() {
         )}
 
         {activeTab === "games" && (
-          activeLeague ? (
-            <GamesView
-              fixtures={fixtures}
-              predictions={userPredictions}
-              onSavePrediction={savePrediction}
-              loading={dataState.loading && fixtures.length === 0}
-              settings={activeLeague.settings}
-            />
-          ) : (
-            <LeagueRequired setActiveTab={setActiveTab} />
-          )
+          <GamesView
+            fixtures={fixtures}
+            predictions={userPredictions}
+            onSavePrediction={savePrediction}
+            loading={dataState.loading && fixtures.length === 0}
+            settings={activeLeague?.settings}
+          />
         )}
 
         {activeTab === "bonus" && (
@@ -114,16 +112,12 @@ function AppContent() {
         )}
 
         {activeTab === "ranking" && (
-          activeLeague ? (
-            <RankingView
-              activeLeague={activeLeague}
-              ranking={ranking}
-              fixtures={fixtures}
-              predictions={leaguePredictions}
-            />
-          ) : (
-            <LeagueRequired setActiveTab={setActiveTab} />
-          )
+          <RankingView
+            activeLeague={activeLeague}
+            ranking={ranking}
+            fixtures={fixtures}
+            predictions={leaguePredictions}
+          />
         )}
 
         {activeTab === "league" && (
@@ -131,10 +125,12 @@ function AppContent() {
             activeLeague={activeLeague}
             currentUser={currentUser}
             leagues={leagues}
+            members={membersByLeague[activeLeague?.id] || []}
             publicLeagues={publicLeagues}
             onCreateLeague={createLeague}
             onJoinLeague={joinLeague}
             onJoinPublicLeague={joinPublicLeague}
+            onRemoveLeagueMember={removeLeagueMember}
             onSelectLeague={setActiveLeagueId}
           />
         )}

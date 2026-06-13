@@ -1,5 +1,5 @@
 import React from "react";
-import { Crown, ClipboardList, CheckCircle2, Gauge, Edit3, UsersRound, CalendarDays, Medal } from "lucide-react";
+import { Crown, ClipboardList, CheckCircle2, Gauge, Edit3, CalendarDays, Medal } from "lucide-react";
 import { formatTime, formatDate } from "../utils/formatters";
 import { StatCard } from "./Shared.jsx";
 
@@ -31,12 +31,12 @@ export function Dashboard({
           <p>
             {activeLeague
               ? "Veja os proximos jogos, complete seus palpites e acompanhe o ranking da turma."
-              : "Crie uma liga ou entre com um codigo para comecar a disputar com seus amigos."}
+              : "Voce ja pode palpitar agora. Quando entrar em uma liga, seus pontos entram no ranking automaticamente."}
           </p>
         </div>
-        <button className="primary-button compact" onClick={() => setActiveTab(activeLeague ? "games" : "league")}>
-          {activeLeague ? "Palpitar agora" : "Abrir ligas"}
-          {activeLeague ? <Edit3 size={18} /> : <UsersRound size={18} />}
+        <button className="primary-button compact" onClick={() => setActiveTab("games")}>
+          Palpitar agora
+          <Edit3 size={18} />
         </button>
       </div>
 
@@ -77,7 +77,7 @@ export function Dashboard({
                 <b>{user.points} pts</b>
               </div>
             ))}
-            {!ranking.length && <p className="helper-text">O ranking aparece quando sua liga tiver participantes.</p>}
+            {!ranking.length && <p className="helper-text">Seu ranking aparece quando seus palpites comecarem a pontuar.</p>}
           </div>
         </section>
       </div>
