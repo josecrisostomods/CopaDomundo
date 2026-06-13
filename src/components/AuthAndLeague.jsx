@@ -86,8 +86,8 @@ export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
   );
 }
 
-export function DisplayNameScreen({ profile, onSaveName }) {
-  const [name, setName] = useState(profile.name || "");
+export function DisplayNameScreen({ onSaveName }) {
+  const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -116,17 +116,17 @@ export function DisplayNameScreen({ profile, onSaveName }) {
         <img src="/world-cup-mark.svg" alt="" className="brand-mark" />
         <span className="eyebrow">Perfil do jogador</span>
         <h1>Como voce quer aparecer?</h1>
-        <p>Seu usuario e usado para entrar. Esse nome aparece para os amigos no ranking da liga.</p>
+        <p>Escolha o nome que seus amigos vao ver no ranking.</p>
       </section>
 
       <form className="login-card" onSubmit={submit}>
         <label>
-          Nome no jogo
+          Nome no ranking
           <input
             autoComplete="name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Ex: Jardel"
+            placeholder="Digite seu nome no ranking"
             maxLength={30}
           />
         </label>

@@ -41,7 +41,7 @@ function AppContent() {
   }
 
   if (!profile.displayNameSet) {
-    return <DisplayNameScreen profile={profile} onSaveName={updateProfile} />;
+    return <DisplayNameScreen onSaveName={updateProfile} />;
   }
 
   return (
