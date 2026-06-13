@@ -40,6 +40,7 @@ export function AppProvider({ children }) {
     clearRecoveryCode,
     generateRecoveryCode,
     handlePlayerAuth: authPlayerAuth,
+    recoverAccount: authRecoverAccount,
     updateProfile: authUpdateProfile,
     handleLogout: authLogout,
   } = useAuth();
@@ -100,7 +101,14 @@ export function AppProvider({ children }) {
           remote.leagues.some((league) => league.id === current) ? current : remote.leagues[0]?.id || null,
         );
 
-        if (remote.fixtures.length) setFixtures(remote.fixtures);
+        // Só substituir fixtures locais se o banco remoto tiver um conjunto
+        // razoavelmente completo (pelo menos 48, metade da fase de grupos).
+        // Isso evita que um retorno parcial (ex.: 2 jogos) apague o calendário
+        // mock completo do usuário.
+        const MIN_REMOTE_FIXTURES = 48;
+        if (remote.fixtures.length >= MIN_REMOTE_FIXTURES) {
+          setFixtures(remote.fixtures);
+        }
         setPredictions(remote.predictions);
         setBonusPredictions(remote.bonusPredictions || []);
         setMembersByLeague(remote.membersByLeague || {});
@@ -129,6 +137,15 @@ export function AppProvider({ children }) {
           loading: false,
           message: `${error.message} Nao foi possivel carregar suas ligas.`,
         });
+        // Se a sessao expirou ou e invalida, forcar logout para voltar ao login
+        if (error.message && error.message.includes('Sessao invalida')) {
+          authLogout();
+          setLeagues([]);
+          setActiveLeagueId(null);
+          setPredictions([]);
+          setBonusPredictions([]);
+          setMembersByLeague({});
+        }
       }
     }
 
@@ -437,6 +454,7 @@ export function AppProvider({ children }) {
     dataState,
     lastSync,
     handlePlayerAuth,
+    recoverAccount,
     savePrediction,
     saveBonusPrediction,
     createLeague,

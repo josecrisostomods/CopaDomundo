@@ -47,6 +47,20 @@ export function useFixtures() {
         return null;
       }
 
+      // Só substituir se o payload tiver um conjunto razoavelmente completo
+      // (pelo menos 48 jogos). Evita que uma resposta parcial da API apague
+      // o calendário local completo.
+      const MIN_SYNC_FIXTURES = 48;
+      if (payload.fixtures.length < MIN_SYNC_FIXTURES) {
+        if (!silent) {
+          setSyncState({
+            loading: false,
+            message: `A API retornou apenas ${payload.fixtures.length} jogos (esperado 48+). Calendario local mantido.`,
+          });
+        }
+        return null;
+      }
+
       setFixtures(payload.fixtures);
       const syncedAt = payload.syncedAt || new Date().toISOString();
       setLastSync(syncedAt);
