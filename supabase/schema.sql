@@ -225,6 +225,7 @@ drop function if exists public.admin_delete_league(text, uuid);
 drop function if exists public.admin_create_league(text, text, boolean);
 drop function if exists public.admin_update_league(text, uuid, text, boolean);
 drop function if exists public.admin_player_id_from_session(text);
+drop function if exists public.ensure_fixture_for_prediction(text, uuid, jsonb);
 
 create or replace function public.player_payload(player public.profiles)
 returns jsonb
@@ -1197,6 +1198,177 @@ begin
 end;
 $$;
 
+create or replace function public.ensure_fixture_for_prediction(
+  session_token text,
+  p_league_id uuid,
+  fixture_data jsonb
+)
+returns public.fixtures
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_player_id uuid;
+  fixture_id text;
+  fixture_api_id text;
+  fixture_group text;
+  fixture_round text;
+  fixture_phase text;
+  fixture_stage_type text;
+  fixture_venue text;
+  fixture_kickoff timestamptz;
+  fixture_status text;
+  home_data jsonb;
+  away_data jsonb;
+  home_id text;
+  home_name text;
+  away_id text;
+  away_name text;
+  saved_fixture public.fixtures;
+begin
+  current_player_id := public.player_id_from_session(session_token);
+
+  if not exists (
+    select 1
+    from public.league_members lm
+    where lm.league_id = p_league_id
+    and lm.user_id = current_player_id
+  ) then
+    raise exception 'Voce nao participa dessa liga';
+  end if;
+
+  fixture_id := nullif(trim(coalesce(fixture_data->>'id', '')), '');
+  fixture_api_id := nullif(trim(coalesce(fixture_data->>'apiId', fixture_data->>'api_id', '')), '');
+  fixture_group := nullif(trim(coalesce(fixture_data->>'group', fixture_data->>'group_name', '')), '');
+  fixture_round := nullif(trim(coalesce(fixture_data->>'round', '')), '');
+  fixture_phase := coalesce(nullif(trim(coalesce(fixture_data->>'phase', '')), ''), 'Copa do Mundo');
+  fixture_stage_type := upper(coalesce(nullif(trim(coalesce(fixture_data->>'stageType', fixture_data->>'stage_type', '')), ''), 'GROUP'));
+  fixture_venue := coalesce(nullif(trim(coalesce(fixture_data->>'venue', '')), ''), 'A definir');
+  fixture_status := upper(coalesce(nullif(trim(coalesce(fixture_data->>'status', '')), ''), 'SCHEDULED'));
+  home_data := fixture_data->'home';
+  away_data := fixture_data->'away';
+  home_id := nullif(trim(coalesce(home_data->>'id', '')), '');
+  home_name := coalesce(nullif(trim(coalesce(home_data->>'name', '')), ''), 'Time A');
+  away_id := nullif(trim(coalesce(away_data->>'id', '')), '');
+  away_name := coalesce(nullif(trim(coalesce(away_data->>'name', '')), ''), 'Time B');
+
+  if fixture_id is null then
+    raise exception 'Jogo invalido';
+  end if;
+
+  if home_id is null or away_id is null then
+    raise exception 'Selecoes invalidas';
+  end if;
+
+  if fixture_stage_type not in ('GROUP', 'KNOCKOUT') then
+    raise exception 'Tipo de fase invalido';
+  end if;
+
+  if fixture_status not in ('SCHEDULED', 'LIVE', 'FINISHED', 'POSTPONED', 'CANCELLED') then
+    fixture_status := 'SCHEDULED';
+  end if;
+
+  fixture_kickoff := (fixture_data->>'kickoff')::timestamptz;
+
+  if fixture_status = 'SCHEDULED' and fixture_kickoff <= now() then
+    fixture_status := 'FINISHED';
+  end if;
+
+  insert into public.teams (id, name, flag, crest_url, api_provider, api_id)
+  values (
+    home_id,
+    home_name,
+    nullif(trim(coalesce(home_data->>'flag', 'FIFA')), ''),
+    nullif(trim(coalesce(home_data->>'crest', home_data->>'crest_url', '')), ''),
+    'local',
+    home_id
+  )
+  on conflict (id) do nothing;
+
+  insert into public.teams (id, name, flag, crest_url, api_provider, api_id)
+  values (
+    away_id,
+    away_name,
+    nullif(trim(coalesce(away_data->>'flag', 'FIFA')), ''),
+    nullif(trim(coalesce(away_data->>'crest', away_data->>'crest_url', '')), ''),
+    'local',
+    away_id
+  )
+  on conflict (id) do nothing;
+
+  select *
+  into saved_fixture
+  from public.fixtures
+  where id = fixture_id
+  limit 1;
+
+  if saved_fixture.id is not null then
+    if saved_fixture.kickoff > now() and fixture_status = 'SCHEDULED' then
+      update public.fixtures
+      set
+        api_id = coalesce(fixture_api_id, api_id),
+        group_name = fixture_group,
+        round = fixture_round,
+        phase = fixture_phase,
+        stage_type = fixture_stage_type,
+        venue = fixture_venue,
+        kickoff = fixture_kickoff,
+        status = 'SCHEDULED',
+        home_team_id = home_id,
+        away_team_id = away_id,
+        updated_at = now()
+      where id = fixture_id
+      returning * into saved_fixture;
+    end if;
+
+    return saved_fixture;
+  end if;
+
+  insert into public.fixtures (
+    id,
+    api_provider,
+    api_id,
+    group_name,
+    round,
+    phase,
+    stage_type,
+    venue,
+    kickoff,
+    status,
+    home_team_id,
+    away_team_id,
+    home_score,
+    away_score,
+    winner_team_id,
+    classification_method,
+    updated_at
+  )
+  values (
+    fixture_id,
+    'local',
+    fixture_api_id,
+    fixture_group,
+    fixture_round,
+    fixture_phase,
+    fixture_stage_type,
+    fixture_venue,
+    fixture_kickoff,
+    fixture_status,
+    home_id,
+    away_id,
+    nullif(fixture_data->>'homeScore', '')::int,
+    nullif(fixture_data->>'awayScore', '')::int,
+    nullif(trim(coalesce(fixture_data->>'winner', fixture_data->>'winner_team_id', '')), ''),
+    nullif(upper(trim(coalesce(fixture_data->>'classificationMethod', fixture_data->>'classification_method', ''))), ''),
+    now()
+  )
+  returning * into saved_fixture;
+
+  return saved_fixture;
+end;
+$$;
+
 create or replace function public.save_player_prediction(
   session_token text,
   p_league_id uuid,
@@ -1354,6 +1526,7 @@ grant execute on function public.get_player_state(text) to anon, authenticated;
 grant execute on function public.create_league_with_owner(text, text, boolean) to anon, authenticated;
 grant execute on function public.join_league_by_code(text, text) to anon, authenticated;
 grant execute on function public.join_public_league(text, uuid) to anon, authenticated;
+grant execute on function public.ensure_fixture_for_prediction(text, uuid, jsonb) to anon, authenticated;
 grant execute on function public.save_player_prediction(text, uuid, text, text, int, int, text, text, int, int, int, int) to anon, authenticated;
 grant execute on function public.save_bonus_prediction(text, uuid, text, text, text) to anon, authenticated;
 grant execute on function public.logout_player(text) to anon, authenticated;

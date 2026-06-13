@@ -142,6 +142,36 @@ function mapAuthPayload(payload) {
   };
 }
 
+function fixturePayload(fixture) {
+  return {
+    id: fixture.id,
+    apiId: fixture.apiId || null,
+    group: fixture.group || null,
+    round: fixture.round ? String(fixture.round) : null,
+    phase: fixture.phase,
+    stageType: fixture.stageType,
+    venue: fixture.venue,
+    kickoff: fixture.kickoff,
+    status: fixture.status,
+    home: {
+      id: fixture.home.id,
+      name: fixture.home.name,
+      flag: fixture.home.flag || "FIFA",
+      crest: fixture.home.crest || null,
+    },
+    away: {
+      id: fixture.away.id,
+      name: fixture.away.name,
+      flag: fixture.away.flag || "FIFA",
+      crest: fixture.away.crest || null,
+    },
+    homeScore: fixture.homeScore,
+    awayScore: fixture.awayScore,
+    winner: fixture.winner || null,
+    classificationMethod: fixture.classificationMethod || null,
+  };
+}
+
 export async function registerPlayer({ username, password }) {
   if (!supabase) throw new Error("Supabase nao configurado.");
 
@@ -283,8 +313,18 @@ export async function fetchRemoteState(sessionToken) {
   };
 }
 
-export async function saveRemotePrediction(prediction, sessionToken) {
+export async function saveRemotePrediction(prediction, sessionToken, fixture) {
   if (!supabase) throw new Error("Supabase nao configurado.");
+
+  if (fixture) {
+    const { error: fixtureError } = await supabase.rpc("ensure_fixture_for_prediction", {
+      session_token: sessionToken,
+      p_league_id: prediction.leagueId,
+      fixture_data: fixturePayload(fixture),
+    });
+
+    if (fixtureError) throw fixtureError;
+  }
 
   const { data, error } = await supabase.rpc("save_player_prediction", {
     session_token: sessionToken,

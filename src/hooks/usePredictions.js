@@ -54,7 +54,7 @@ export function usePredictions(sessionToken, currentUser, activeLeague) {
 
     if (isSupabaseConfigured) {
       try {
-        const saved = await saveRemotePrediction(nextPrediction, sessionToken);
+        const saved = await saveRemotePrediction(nextPrediction, sessionToken, fixture);
         setPredictions((items) =>
           items.map((item) => (item.id === nextPrediction.id ? saved : item)),
         );
