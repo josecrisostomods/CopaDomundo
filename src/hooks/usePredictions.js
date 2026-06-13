@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { STORAGE } from "../config/appConfig";
 import { readStorage, writeStorage, makeId } from "../lib/storage";
 import { isSupabaseConfigured } from "../lib/supabase";
-import { saveRemotePrediction } from "../services/supabaseData";
+import { saveRemotePrediction, saveRemoteBonusPrediction } from "../services/supabaseData";
 
 function getInitialPredictions() {
   const storedPredictions = readStorage(STORAGE.predictions, []);
@@ -12,6 +12,7 @@ function getInitialPredictions() {
 
 export function usePredictions(sessionToken, currentUser, activeLeague) {
   const [predictions, setPredictions] = useState(getInitialPredictions);
+  const [bonusPredictions, setBonusPredictions] = useState([]);
 
   useEffect(() => writeStorage(STORAGE.predictions, predictions), [predictions]);
 
@@ -66,9 +67,50 @@ export function usePredictions(sessionToken, currentUser, activeLeague) {
     return nextPrediction;
   }
 
+  async function saveBonusPrediction(form) {
+    if (!activeLeague || !currentUser) {
+      throw new Error("Entre em uma liga antes de enviar palpites bonus.");
+    }
+
+    const nextBonus = {
+      leagueId: activeLeague.id,
+      userId: currentUser.id,
+      championTeamId: form.championTeamId || null,
+      topScorerName: form.topScorerName || null,
+      revelationName: form.revelationName || null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const previousBonus = bonusPredictions;
+    setBonusPredictions((items) => {
+      const existing = items.find(i => i.leagueId === activeLeague.id && i.userId === currentUser.id);
+      return existing
+        ? items.map(i => (i === existing ? nextBonus : i))
+        : [...items, nextBonus];
+    });
+
+    if (isSupabaseConfigured) {
+      try {
+        const saved = await saveRemoteBonusPrediction(nextBonus, sessionToken);
+        setBonusPredictions((items) => {
+          const existing = items.find(i => i.leagueId === activeLeague.id && i.userId === currentUser.id);
+          return existing ? items.map(i => (i === existing ? saved : i)) : [...items, saved];
+        });
+        return saved;
+      } catch (error) {
+        setBonusPredictions(previousBonus);
+        throw error;
+      }
+    }
+    return nextBonus;
+  }
+
   return {
     predictions,
     setPredictions,
+    bonusPredictions,
+    setBonusPredictions,
     savePrediction,
+    saveBonusPrediction,
   };
 }

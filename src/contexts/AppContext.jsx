@@ -61,7 +61,10 @@ export function AppProvider({ children }) {
   const {
     predictions,
     setPredictions,
+    bonusPredictions,
+    setBonusPredictions,
     savePrediction: predictionsSavePrediction,
+    saveBonusPrediction: predictionsSaveBonusPrediction,
   } = usePredictions(sessionToken, currentUser, activeLeague);
 
   useEffect(() => {
@@ -135,6 +138,17 @@ export function AppProvider({ children }) {
       addToast("Palpite salvo com sucesso!", "success");
     } catch (error) {
       addToast(error.message || "Erro ao salvar palpite", "error");
+      throw error;
+    }
+  }
+
+  async function saveBonusPrediction(form) {
+    try {
+      await predictionsSaveBonusPrediction(form);
+      addToast("Palpites bonus salvos com sucesso!", "success");
+    } catch (error) {
+      addToast(error.message || "Erro ao salvar palpites bonus", "error");
+      throw error;
     }
   }
 
@@ -212,6 +226,7 @@ export function AppProvider({ children }) {
     setLeagues([]);
     setActiveLeagueId(null);
     setPredictions([]);
+    setBonusPredictions([]);
     setMembersByLeague({});
     setDataState({ loading: false, message: "" });
   }
@@ -227,6 +242,7 @@ export function AppProvider({ children }) {
     setActiveLeagueId,
     fixtures,
     predictions,
+    bonusPredictions,
     userPredictions,
     leaguePredictions,
     membersByLeague,
@@ -239,6 +255,7 @@ export function AppProvider({ children }) {
     lastSync,
     handlePlayerAuth,
     savePrediction,
+    saveBonusPrediction,
     createLeague,
     joinLeague,
     handleSync,

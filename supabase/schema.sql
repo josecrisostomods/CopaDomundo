@@ -128,6 +128,18 @@ alter table public.predictions enable row level security;
 alter table public.league_settings enable row level security;
 alter table public.api_sync_logs enable row level security;
 
+create table if not exists public.user_bonus_predictions (
+  league_id uuid references public.leagues(id) on delete cascade,
+  user_id uuid references public.profiles(id) on delete cascade,
+  champion_team_id text,
+  top_scorer_name text,
+  revelation_name text,
+  updated_at timestamptz not null default now(),
+  primary key (league_id, user_id)
+);
+
+alter table public.user_bonus_predictions enable row level security;
+
 drop policy if exists "profiles_select_own" on public.profiles;
 drop policy if exists "profiles_insert_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
@@ -148,6 +160,11 @@ drop policy if exists "leagues_no_direct_access" on public.leagues;
 drop policy if exists "members_no_direct_access" on public.league_members;
 drop policy if exists "predictions_no_direct_access" on public.predictions;
 drop policy if exists "settings_no_direct_access" on public.league_settings;
+
+drop policy if exists "bonus_no_direct_access" on public.user_bonus_predictions;
+
+create policy "bonus_no_direct_access" on public.user_bonus_predictions
+  for all using (false) with check (false);
 
 create policy "profiles_no_direct_access" on public.profiles
   for all using (false) with check (false);
@@ -382,6 +399,7 @@ declare
   leagues_json jsonb;
   members_json jsonb;
   predictions_json jsonb;
+  bonus_predictions_json jsonb;
 begin
   current_player_id := public.player_id_from_session(session_token);
 
@@ -457,11 +475,22 @@ begin
     and lm.user_id = current_player_id
   );
 
+  select coalesce(jsonb_agg(to_jsonb(bp) order by bp.updated_at desc), '[]'::jsonb)
+  into bonus_predictions_json
+  from public.user_bonus_predictions bp
+  where exists (
+    select 1
+    from public.league_members lm
+    where lm.league_id = bp.league_id
+    and lm.user_id = current_player_id
+  );
+
   return jsonb_build_object(
     'profile', public.player_payload(current_player),
     'leagues', leagues_json,
     'members', members_json,
-    'predictions', predictions_json
+    'predictions', predictions_json,
+    'bonusPredictions', bonus_predictions_json
   );
 end;
 $$;
@@ -649,6 +678,61 @@ begin
 end;
 $$;
 
+create or replace function public.save_bonus_prediction(
+  session_token text,
+  p_league_id uuid,
+  p_champion_team_id text,
+  p_top_scorer_name text,
+  p_revelation_name text
+)
+returns public.user_bonus_predictions
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_player_id uuid;
+  saved_bonus public.user_bonus_predictions;
+begin
+  current_player_id := public.player_id_from_session(session_token);
+
+  if not exists (
+    select 1
+    from public.league_members lm
+    where lm.league_id = p_league_id
+    and lm.user_id = current_player_id
+  ) then
+    raise exception 'Voce nao participa dessa liga';
+  end if;
+
+  insert into public.user_bonus_predictions (
+    league_id,
+    user_id,
+    champion_team_id,
+    top_scorer_name,
+    revelation_name,
+    updated_at
+  )
+  values (
+    p_league_id,
+    current_player_id,
+    p_champion_team_id,
+    p_top_scorer_name,
+    p_revelation_name,
+    now()
+  )
+  on conflict (league_id, user_id) do update
+  set
+    champion_team_id = excluded.champion_team_id,
+    top_scorer_name = excluded.top_scorer_name,
+    revelation_name = excluded.revelation_name,
+    updated_at = now()
+  returning * into saved_bonus;
+
+  return saved_bonus;
+end;
+$$;
+
 grant execute on function public.register_player(text, text) to anon, authenticated;
 grant execute on function public.login_player(text, text) to anon, authenticated;
 grant execute on function public.update_player_profile(text, text) to anon, authenticated;
@@ -656,6 +740,7 @@ grant execute on function public.get_player_state(text) to anon, authenticated;
 grant execute on function public.create_league_with_owner(text, text) to anon, authenticated;
 grant execute on function public.join_league_by_code(text, text) to anon, authenticated;
 grant execute on function public.save_player_prediction(text, uuid, text, text, int, int, text, text, int, int, int, int) to anon, authenticated;
+grant execute on function public.save_bonus_prediction(text, uuid, text, text, text) to anon, authenticated;
 grant execute on function public.logout_player(text) to anon, authenticated;
 
 revoke execute on function public.create_player_session(uuid) from public, anon, authenticated;

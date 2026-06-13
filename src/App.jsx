@@ -3,6 +3,7 @@ import { LoginScreen, DisplayNameScreen, LeagueRequired, LeagueView } from "./co
 import { Header, BottomNav } from "./components/Layout.jsx";
 import { Dashboard } from "./components/Dashboard.jsx";
 import { GamesView } from "./components/GamesView.jsx";
+import { BonusPredictions } from "./components/BonusPredictions.jsx";
 import { RankingView } from "./components/RankingView.jsx";
 import { ProfileView } from "./components/ProfileView.jsx";
 import { AppProvider, useApp } from "./contexts/AppContext.jsx";
@@ -20,6 +21,7 @@ function AppContent() {
     setActiveLeagueId,
     fixtures,
     predictions,
+    bonusPredictions,
     userPredictions,
     leaguePredictions,
     membersByLeague,
@@ -32,6 +34,7 @@ function AppContent() {
     lastSync,
     handlePlayerAuth,
     savePrediction,
+    saveBonusPrediction,
     createLeague,
     joinLeague,
     updateProfile,
@@ -81,6 +84,18 @@ function AppContent() {
               onSavePrediction={savePrediction}
               loading={dataState.loading && fixtures.length === 0}
               settings={activeLeague.settings}
+            />
+          ) : (
+            <LeagueRequired setActiveTab={setActiveTab} />
+          )
+        )}
+
+        {activeTab === "bonus" && (
+          activeLeague ? (
+            <BonusPredictions
+              fixtures={fixtures}
+              bonusPredictions={bonusPredictions || []}
+              onSaveBonusPrediction={saveBonusPrediction}
             />
           ) : (
             <LeagueRequired setActiveTab={setActiveTab} />

@@ -1,4 +1,4 @@
-import { CalendarDays, Home, Trophy, UserRound, UsersRound } from "lucide-react";
+import { CalendarDays, Home, Trophy, UserRound, UsersRound, Star } from "lucide-react";
 
 export const STORAGE = {
   profile: "copa-profile",
@@ -18,6 +18,7 @@ export const AUTO_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 export const navItems = [
   { id: "home", label: "Inicio", icon: Home },
   { id: "games", label: "Jogos", icon: CalendarDays },
+  { id: "bonus", label: "Bonus", icon: Star },
   { id: "ranking", label: "Ranking", icon: Trophy },
   { id: "league", label: "Liga", icon: UsersRound },
   { id: "profile", label: "Perfil", icon: UserRound },

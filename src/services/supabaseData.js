@@ -79,6 +79,17 @@ function mapPrediction(row) {
   };
 }
 
+function mapBonusPrediction(row) {
+  return {
+    leagueId: row.league_id,
+    userId: row.user_id,
+    championTeamId: row.champion_team_id,
+    topScorerName: row.top_scorer_name,
+    revelationName: row.revelation_name,
+    updatedAt: row.updated_at,
+  };
+}
+
 export async function upsertProfile(profile) {
   if (!supabase) return profile;
 
@@ -196,6 +207,7 @@ export async function fetchRemoteState(sessionToken) {
     leagues: (state.leagues || []).map((league) => mapLeague(league, league)),
     fixtures: (fixturesResult.data || []).map((fixture) => mapFixture(fixture, teamMap)),
     predictions: (state.predictions || []).map(mapPrediction),
+    bonusPredictions: (state.bonusPredictions || []).map(mapBonusPrediction),
     membersByLeague,
   };
 }
@@ -220,4 +232,19 @@ export async function saveRemotePrediction(prediction, sessionToken) {
 
   if (error) throw error;
   return mapPrediction(data);
+}
+
+export async function saveRemoteBonusPrediction(bonus, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("save_bonus_prediction", {
+    session_token: sessionToken,
+    p_league_id: bonus.leagueId,
+    p_champion_team_id: bonus.championTeamId,
+    p_top_scorer_name: bonus.topScorerName,
+    p_revelation_name: bonus.revelationName,
+  });
+
+  if (error) throw error;
+  return mapBonusPrediction(data);
 }
