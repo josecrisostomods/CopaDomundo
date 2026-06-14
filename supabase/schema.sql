@@ -1847,3 +1847,22 @@ grant select on table public.teams to anon, authenticated;
 grant select on table public.fixtures to anon, authenticated;
 
 notify pgrst, 'reload schema';
+
+-- 1. Garante que as configurações de pontos fiquem 2 e 5
+update public.league_settings 
+set points_outcome = 2, points_exact_score = 5;
+
+-- 2. Atualiza o resultado do Mexico x África do Sul no banco de dados
+update public.fixtures 
+set status = 'FINISHED', home_score = 2, away_score = 0, winner_team_id = home_team_id, classification_method = 'NORMAL_TIME' 
+where id = 'group-A-1';
+
+-- 3. Atualiza o resultado do Coreia do Sul x Tchequia no banco de dados
+update public.fixtures 
+set status = 'FINISHED', home_score = 2, away_score = 1, winner_team_id = home_team_id, classification_method = 'NORMAL_TIME' 
+where id = 'group-A-2';
+
+-- 4. Atualiza o resultado do Canada x Bosnia no banco de dados
+update public.fixtures 
+set status = 'FINISHED', home_score = 1, away_score = 1, winner_team_id = null, classification_method = 'NORMAL_TIME' 
+where id = 'group-B-3';
