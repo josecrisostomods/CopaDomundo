@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { STORAGE } from "../config/appConfig";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { readStorage, writeStorage } from "../lib/storage";
@@ -80,12 +80,12 @@ export function useAuth() {
     return code;
   }
 
-  async function handleLogout() {
+  const handleLogout = useCallback(async function handleLogout() {
     await logoutPlayer(sessionToken);
     setProfile(null);
     setSessionToken(null);
     setRecoveryCode(null);
-  }
+  }, [sessionToken]);
 
   return {
     profile,

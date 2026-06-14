@@ -144,12 +144,22 @@ on public.predictions (user_id, fixture_id);
 
 create table if not exists public.league_settings (
   league_id uuid primary key references public.leagues(id) on delete cascade,
-  points_outcome int not null default 3,
-  points_exact_score int not null default 2,
+  points_outcome int not null default 2,
+  points_exact_score int not null default 5,
   points_qualifier int not null default 2,
   points_qualification_method int not null default 2,
   updated_at timestamptz not null default now()
 );
+
+alter table public.league_settings alter column points_outcome set default 2;
+alter table public.league_settings alter column points_exact_score set default 5;
+update public.league_settings
+set
+  points_outcome = 2,
+  points_exact_score = 5,
+  updated_at = now()
+where points_outcome = 3
+and points_exact_score = 2;
 
 create table if not exists public.api_sync_logs (
   id uuid primary key default gen_random_uuid(),
@@ -249,6 +259,7 @@ drop function if exists public.admin_delete_league(text, uuid);
 drop function if exists public.admin_create_league(text, text, boolean);
 drop function if exists public.admin_update_league(text, uuid, text, boolean);
 drop function if exists public.admin_player_id_from_session(text);
+drop function if exists public.admin_ensure_fixture_for_update(text, jsonb);
 drop function if exists public.ensure_fixture_for_prediction(text, uuid, jsonb);
 
 create or replace function public.player_payload(player public.profiles)
@@ -666,6 +677,154 @@ begin
 end;
 $$;
 
+create or replace function public.admin_ensure_fixture_for_update(
+  session_token text,
+  fixture_data jsonb
+)
+returns public.fixtures
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  fixture_id text;
+  fixture_api_id text;
+  fixture_group text;
+  fixture_round text;
+  fixture_phase text;
+  fixture_stage_type text;
+  fixture_venue text;
+  fixture_kickoff timestamptz;
+  fixture_status text;
+  home_data jsonb;
+  away_data jsonb;
+  home_id text;
+  home_name text;
+  away_id text;
+  away_name text;
+  saved_fixture public.fixtures;
+begin
+  perform public.admin_player_id_from_session(session_token);
+
+  fixture_id := nullif(trim(coalesce(fixture_data->>'id', '')), '');
+  fixture_api_id := nullif(trim(coalesce(fixture_data->>'apiId', fixture_data->>'api_id', '')), '');
+  fixture_group := nullif(trim(coalesce(fixture_data->>'group', fixture_data->>'group_name', '')), '');
+  fixture_round := nullif(trim(coalesce(fixture_data->>'round', '')), '');
+  fixture_phase := coalesce(nullif(trim(coalesce(fixture_data->>'phase', '')), ''), 'Copa do Mundo');
+  fixture_stage_type := upper(coalesce(nullif(trim(coalesce(fixture_data->>'stageType', fixture_data->>'stage_type', '')), ''), 'GROUP'));
+  fixture_venue := coalesce(nullif(trim(coalesce(fixture_data->>'venue', '')), ''), 'A definir');
+  fixture_status := upper(coalesce(nullif(trim(coalesce(fixture_data->>'status', '')), ''), 'SCHEDULED'));
+  home_data := fixture_data->'home';
+  away_data := fixture_data->'away';
+  home_id := nullif(trim(coalesce(home_data->>'id', '')), '');
+  home_name := coalesce(nullif(trim(coalesce(home_data->>'name', '')), ''), 'Time A');
+  away_id := nullif(trim(coalesce(away_data->>'id', '')), '');
+  away_name := coalesce(nullif(trim(coalesce(away_data->>'name', '')), ''), 'Time B');
+
+  if fixture_id is null then
+    raise exception 'Jogo invalido';
+  end if;
+
+  if home_id is null or away_id is null then
+    raise exception 'Selecoes invalidas';
+  end if;
+
+  if fixture_stage_type not in ('GROUP', 'KNOCKOUT') then
+    raise exception 'Tipo de fase invalido';
+  end if;
+
+  if fixture_status not in ('SCHEDULED', 'LIVE', 'FINISHED', 'POSTPONED', 'CANCELLED') then
+    fixture_status := 'SCHEDULED';
+  end if;
+
+  fixture_kickoff := (fixture_data->>'kickoff')::timestamptz;
+
+  insert into public.teams (id, name, flag, crest_url, api_provider, api_id)
+  values (
+    home_id,
+    home_name,
+    nullif(trim(coalesce(home_data->>'flag', 'FIFA')), ''),
+    nullif(trim(coalesce(home_data->>'crest', home_data->>'crest_url', '')), ''),
+    'local',
+    home_id
+  )
+  on conflict (id) do update
+  set
+    name = excluded.name,
+    flag = coalesce(excluded.flag, public.teams.flag),
+    crest_url = coalesce(excluded.crest_url, public.teams.crest_url);
+
+  insert into public.teams (id, name, flag, crest_url, api_provider, api_id)
+  values (
+    away_id,
+    away_name,
+    nullif(trim(coalesce(away_data->>'flag', 'FIFA')), ''),
+    nullif(trim(coalesce(away_data->>'crest', away_data->>'crest_url', '')), ''),
+    'local',
+    away_id
+  )
+  on conflict (id) do update
+  set
+    name = excluded.name,
+    flag = coalesce(excluded.flag, public.teams.flag),
+    crest_url = coalesce(excluded.crest_url, public.teams.crest_url);
+
+  insert into public.fixtures (
+    id,
+    api_provider,
+    api_id,
+    group_name,
+    round,
+    phase,
+    stage_type,
+    venue,
+    kickoff,
+    status,
+    home_team_id,
+    away_team_id,
+    home_score,
+    away_score,
+    winner_team_id,
+    classification_method,
+    updated_at
+  )
+  values (
+    fixture_id,
+    'local',
+    fixture_api_id,
+    fixture_group,
+    fixture_round,
+    fixture_phase,
+    fixture_stage_type,
+    fixture_venue,
+    fixture_kickoff,
+    fixture_status,
+    home_id,
+    away_id,
+    nullif(fixture_data->>'homeScore', '')::int,
+    nullif(fixture_data->>'awayScore', '')::int,
+    nullif(trim(coalesce(fixture_data->>'winner', fixture_data->>'winner_team_id', '')), ''),
+    nullif(upper(trim(coalesce(fixture_data->>'classificationMethod', fixture_data->>'classification_method', ''))), ''),
+    now()
+  )
+  on conflict (id) do update
+  set
+    api_id = coalesce(excluded.api_id, public.fixtures.api_id),
+    group_name = excluded.group_name,
+    round = excluded.round,
+    phase = excluded.phase,
+    stage_type = excluded.stage_type,
+    venue = excluded.venue,
+    kickoff = excluded.kickoff,
+    home_team_id = excluded.home_team_id,
+    away_team_id = excluded.away_team_id,
+    updated_at = now()
+  returning * into saved_fixture;
+
+  return saved_fixture;
+end;
+$$;
+
 create or replace function public.admin_update_fixture_result(
   session_token text,
   p_fixture_id text,
@@ -967,8 +1126,8 @@ begin
     'role', league_data.role,
     'memberCount', league_data.member_count,
     'settings', jsonb_build_object(
-      'outcome', coalesce(league_data.points_outcome, 3),
-      'exactScore', coalesce(league_data.points_exact_score, 2),
+      'outcome', coalesce(league_data.points_outcome, 2),
+      'exactScore', coalesce(league_data.points_exact_score, 5),
       'qualifier', coalesce(league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(league_data.points_qualification_method, 2)
     )
@@ -1003,8 +1162,8 @@ begin
     'role', 'public',
     'memberCount', public_league_data.member_count,
     'settings', jsonb_build_object(
-      'outcome', coalesce(public_league_data.points_outcome, 3),
-      'exactScore', coalesce(public_league_data.points_exact_score, 2),
+      'outcome', coalesce(public_league_data.points_outcome, 2),
+      'exactScore', coalesce(public_league_data.points_exact_score, 5),
       'qualifier', coalesce(public_league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(public_league_data.points_qualification_method, 2)
     )
@@ -1671,6 +1830,7 @@ grant execute on function public.save_player_prediction(text, uuid, text, text, 
 grant execute on function public.save_bonus_prediction(text, uuid, text, text, text) to anon, authenticated;
 grant execute on function public.logout_player(text) to anon, authenticated;
 grant execute on function public.get_admin_state(text) to anon, authenticated;
+grant execute on function public.admin_ensure_fixture_for_update(text, jsonb) to anon, authenticated;
 grant execute on function public.admin_update_fixture_result(text, text, text, int, int, text, text) to anon, authenticated;
 grant execute on function public.admin_delete_user(text, uuid) to anon, authenticated;
 grant execute on function public.admin_delete_league(text, uuid) to anon, authenticated;

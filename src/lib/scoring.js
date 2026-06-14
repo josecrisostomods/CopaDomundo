@@ -1,6 +1,6 @@
 export const DEFAULT_SCORING = {
-  outcome: 3,
-  exactScore: 2,
+  outcome: 2,
+  exactScore: 5,
   qualifier: 2,
   qualificationMethod: 2,
 };
@@ -31,18 +31,16 @@ export function scorePrediction(fixture, prediction, scoring = DEFAULT_SCORING) 
   const details = [];
   let total = 0;
   const actualOutcome = getNormalOutcome(fixture.homeScore, fixture.awayScore);
-
-  if (prediction.normalOutcome === actualOutcome) {
-    total += scoring.outcome;
-    details.push({ label: OUTCOME_DETAIL_LABEL, points: scoring.outcome });
-  }
-
-  if (
+  const hasExactScore =
     Number(prediction.homeScore) === Number(fixture.homeScore) &&
-    Number(prediction.awayScore) === Number(fixture.awayScore)
-  ) {
+    Number(prediction.awayScore) === Number(fixture.awayScore);
+
+  if (hasExactScore) {
     total += scoring.exactScore;
     details.push({ label: "Placar exato", points: scoring.exactScore });
+  } else if (prediction.normalOutcome === actualOutcome) {
+    total += scoring.outcome;
+    details.push({ label: OUTCOME_DETAIL_LABEL, points: scoring.outcome });
   }
 
   if (fixture.stageType === "KNOCKOUT") {

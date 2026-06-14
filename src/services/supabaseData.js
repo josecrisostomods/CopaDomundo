@@ -6,6 +6,7 @@ function avatarFor(name) {
 
 function mapLeague(row, meta = {}) {
   const isOwner = meta.role === "owner" || (meta.currentUserId && row.owner_id === meta.currentUserId);
+  const settings = row.settings || {};
 
   return {
     id: row.id,
@@ -15,11 +16,11 @@ function mapLeague(row, meta = {}) {
     role: meta.role || (isOwner ? "owner" : "member"),
     memberCount: meta.memberCount || 1,
     isPublic: Boolean(row.is_public),
-    settings: row.settings || {
-      outcome: 3,
-      exactScore: 2,
-      qualifier: 2,
-      qualificationMethod: 2,
+    settings: {
+      outcome: 2,
+      exactScore: 5,
+      qualifier: settings.qualifier ?? 2,
+      qualificationMethod: settings.qualificationMethod ?? 2,
     },
   };
 }
@@ -391,6 +392,15 @@ export async function fetchAdminState(sessionToken) {
 
 export async function updateRemoteFixtureResult(result, sessionToken) {
   if (!supabase) throw new Error("Supabase nao configurado.");
+
+  if (result.fixture) {
+    const { error: fixtureError } = await supabase.rpc("admin_ensure_fixture_for_update", {
+      session_token: sessionToken,
+      fixture_data: fixturePayload(result.fixture),
+    });
+
+    if (fixtureError) throw fixtureError;
+  }
 
   const { data, error } = await supabase.rpc("admin_update_fixture_result", {
     session_token: sessionToken,

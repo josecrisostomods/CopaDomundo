@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from "
 import { AUTO_SYNC_INTERVAL_MS } from "../config/appConfig";
 import { useToast } from "../components/Toast.jsx";
 import { isSupabaseConfigured } from "../lib/supabase";
+import { mergeFixtureLists } from "../lib/fixtures";
 import { DEFAULT_SCORING, buildRanking } from "../lib/scoring";
 import {
   createAdminRemoteLeague,
@@ -108,6 +109,8 @@ export function AppProvider({ children }) {
         const MIN_REMOTE_FIXTURES = 48;
         if (remote.fixtures.length >= MIN_REMOTE_FIXTURES) {
           setFixtures(remote.fixtures);
+        } else if (remote.fixtures.length > 0) {
+          setFixtures((current) => mergeFixtureLists(current, remote.fixtures));
         }
         setPredictions(remote.predictions);
         setBonusPredictions(remote.bonusPredictions || []);
@@ -153,7 +156,7 @@ export function AppProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [profile?.id, sessionToken, setDataState, setProfile, setLeagues, setPublicLeagues, setActiveLeagueId, setFixtures, setPredictions, setBonusPredictions, setMembersByLeague]);
+  }, [profile?.id, sessionToken, authLogout, setDataState, setProfile, setLeagues, setPublicLeagues, setActiveLeagueId, setFixtures, setPredictions, setBonusPredictions, setMembersByLeague]);
 
   useEffect(() => {
     if (activeTab === "admin" && !currentUser?.isAdmin) {

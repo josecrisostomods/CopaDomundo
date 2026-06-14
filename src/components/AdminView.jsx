@@ -62,7 +62,7 @@ export function AdminView({
           : { ...resultForm, winnerTeamId: "", classificationMethod: "" },
         selectedFixture,
       );
-      await onUpdateFixtureResult(payload);
+      await onUpdateFixtureResult({ ...payload, fixture: selectedFixture });
       setMessage("Resultado atualizado.");
     } catch (error) {
       setMessage(error.message || "Nao foi possivel atualizar o resultado.");

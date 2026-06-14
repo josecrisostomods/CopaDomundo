@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { STORAGE, FIXTURE_DATA_VERSION } from "../config/appConfig";
 import { readStorage, writeStorage } from "../lib/storage";
 import { MOCK_FIXTURES } from "../data/mockWorldCup";
+import { mergeFixtureLists } from "../lib/fixtures";
 import { isFixtureClosed } from "../lib/scoring";
 import { syncFixtures } from "../services/fixtureApi";
 
@@ -52,13 +53,16 @@ export function useFixtures() {
       // o calendário local completo.
       const MIN_SYNC_FIXTURES = 48;
       if (payload.fixtures.length < MIN_SYNC_FIXTURES) {
+        setFixtures((current) => mergeFixtureLists(current, payload.fixtures));
+        const syncedAt = payload.syncedAt || new Date().toISOString();
+        setLastSync(syncedAt);
         if (!silent) {
           setSyncState({
             loading: false,
-            message: `A API retornou apenas ${payload.fixtures.length} jogos (esperado 48+). Calendario local mantido.`,
+            message: `${payload.fixtures.length} jogo(s) atualizado(s). Calendario local completo mantido.`,
           });
         }
-        return null;
+        return payload.fixtures;
       }
 
       setFixtures(payload.fixtures);

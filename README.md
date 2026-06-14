@@ -80,6 +80,7 @@ O site atualiza partidas e placares de duas formas:
 1. **Enquanto alguem esta usando o site**
    - O frontend chama `/api/sync-fixtures` ao entrar.
    - Depois repete a chamada a cada 2 minutos.
+   - Quando a API ou o Supabase retornam poucos jogos, o app mescla esses resultados com o calendario local em vez de apagar a lista completa.
    - Ao voltar para a aba do navegador, ele tenta atualizar de novo.
 
 2. **Sozinho na Vercel**
@@ -147,14 +148,14 @@ Depois de importar o repositorio na Vercel, adicione as variaveis de ambiente do
 
 Fase de grupos:
 
-- Acertou vencedor ou empate: 3 pontos.
-- Acertou placar exato: +2 pontos.
+- Acertou vencedor ou empate: 2 pontos.
+- Acertou placar exato: 5 pontos no total.
 - Palpite errado: 0 pontos.
 
 Mata-mata:
 
-- Acertou vencedor ou empate nos 90 minutos: 3 pontos.
-- Acertou placar exato dos 90 minutos: +2 pontos.
+- Acertou vencedor ou empate nos 90 minutos: 2 pontos.
+- Acertou placar exato dos 90 minutos: 5 pontos no total.
 - Acertou quem passa de fase: +2 pontos.
 - Acertou forma de classificacao: +2 pontos.
 
