@@ -1563,10 +1563,6 @@ begin
 
   fixture_kickoff := (fixture_data->>'kickoff')::timestamptz;
 
-  if fixture_status = 'SCHEDULED' and fixture_kickoff <= now() then
-    fixture_status := 'FINISHED';
-  end if;
-
   insert into public.teams (id, name, flag, crest_url, api_provider, api_id)
   values (
     home_id,
