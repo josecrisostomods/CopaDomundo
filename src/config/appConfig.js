@@ -11,7 +11,7 @@ export const STORAGE = {
   predictions: "copa-predictions",
 };
 
-export const FIXTURE_DATA_VERSION = "2026-pt-br-confirmed-results-v8";
+export const FIXTURE_DATA_VERSION = "2026-pt-br-confirmed-results-v9";
 
 export const AUTO_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
