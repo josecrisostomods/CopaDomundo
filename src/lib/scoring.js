@@ -31,14 +31,17 @@ export function scorePrediction(fixture, prediction, scoring = DEFAULT_SCORING) 
   const details = [];
   let total = 0;
   const actualOutcome = getNormalOutcome(fixture.homeScore, fixture.awayScore);
-  const hasExactScore =
+
+  const isExactScore =
     Number(prediction.homeScore) === Number(fixture.homeScore) &&
     Number(prediction.awayScore) === Number(fixture.awayScore);
 
-  if (hasExactScore) {
+  if (isExactScore) {
+    // Placar exato: dá o total de exactScore (5). Não soma outcome separadamente.
     total += scoring.exactScore;
     details.push({ label: "Placar exato", points: scoring.exactScore });
   } else if (prediction.normalOutcome === actualOutcome) {
+    // Acertou vencedor/empate sem acertar o placar: dá outcome (2).
     total += scoring.outcome;
     details.push({ label: OUTCOME_DETAIL_LABEL, points: scoring.outcome });
   }

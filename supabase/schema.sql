@@ -151,15 +151,10 @@ create table if not exists public.league_settings (
   updated_at timestamptz not null default now()
 );
 
-alter table public.league_settings alter column points_outcome set default 2;
-alter table public.league_settings alter column points_exact_score set default 5;
+-- Migrar ligas existentes para o novo padrão de pontuação
 update public.league_settings
-set
-  points_outcome = 2,
-  points_exact_score = 5,
-  updated_at = now()
-where points_outcome = 3
-and points_exact_score = 2;
+set points_outcome = 2, points_exact_score = 5
+where points_outcome = 3 and points_exact_score = 2;
 
 create table if not exists public.api_sync_logs (
   id uuid primary key default gen_random_uuid(),

@@ -206,9 +206,8 @@ function buildGroupFixtures() {
   ];
 
   return fixtures.map(([group, kickoff, homeName, awayName, venue], index) => {
-    const kickoffTime = new Date(kickoff).getTime();
     const result = confirmedResults[`${homeName}|${awayName}`] || null;
-    const status = kickoffTime < Date.now() ? "FINISHED" : "SCHEDULED";
+    const status = result ? "FINISHED" : "SCHEDULED";
     const home = team(homeName);
     const away = team(awayName);
 

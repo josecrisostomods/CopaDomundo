@@ -17,8 +17,8 @@ function mapLeague(row, meta = {}) {
     memberCount: meta.memberCount || 1,
     isPublic: Boolean(row.is_public),
     settings: {
-      outcome: 2,
-      exactScore: 5,
+      outcome: settings.outcome ?? 2,
+      exactScore: settings.exactScore ?? 5,
       qualifier: settings.qualifier ?? 2,
       qualificationMethod: settings.qualificationMethod ?? 2,
     },
