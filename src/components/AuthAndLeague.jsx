@@ -8,15 +8,16 @@ export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
   const [form, setForm] = useState({ username: "", password: "", recoveryCode: "" });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const localMode = !isSupabaseConfigured;
 
   async function submit(event) {
     event.preventDefault();
-    if (mode === "recover" && !form.recoveryCode) {
+    if (!localMode && mode === "recover" && !form.recoveryCode) {
       setMessage("Informe o codigo de validacao.");
       return;
     }
 
-    if (!form.username || !form.password) {
+    if (!localMode && (!form.username || !form.password)) {
       setMessage("Preencha todos os campos.");
       return;
     }
@@ -24,7 +25,12 @@ export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
     setLoading(true);
     setMessage("");
     try {
-      await onPlayerAuth(form, mode);
+      await onPlayerAuth(
+        localMode
+          ? { username: form.username || "jogador-local", password: "local" }
+          : form,
+        localMode ? "local" : mode,
+      );
     } catch (error) {
       setMessage(error.message || "Nao foi possivel entrar.");
     } finally {
@@ -94,6 +100,8 @@ export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
         <button className="primary-button" disabled={loading || !isSupabaseConfigured}>
           {loading
             ? "Processando..."
+            : localMode
+            ? "Entrar em modo local"
             : mode === "register"
             ? "Criar conta"
             : mode === "recover"
@@ -103,7 +111,7 @@ export function LoginScreen({ onPlayerAuth, isSupabaseConfigured }) {
         </button>
 
         <p className="helper-text">
-          {!isSupabaseConfigured && "Login indisponivel no momento."}
+          {!isSupabaseConfigured && "Supabase nao configurado. O modo local libera o app neste navegador."}
           {isSupabaseConfigured && mode === "login" && "Use usuario e senha para entrar."}
           {isSupabaseConfigured && mode === "register" && "Depois guarde o codigo de validacao da conta."}
           {isSupabaseConfigured && mode === "recover" && "Use seu codigo para criar novo usuario e senha."}

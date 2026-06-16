@@ -1,7 +1,77 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Star, Trophy, Target, Sparkles, Save } from "lucide-react";
 import { ScreenHeading } from "./Shared.jsx";
 import { useApp } from "../contexts/AppContext.jsx";
+import { filterWorldCupPlayers, getWorldCupPlayers } from "../services/playerDatabase.js";
+
+function FieldLabel({ icon: Icon, children }) {
+  return (
+    <span className="bonus-field-label">
+      <Icon size={18} />
+      {children}
+    </span>
+  );
+}
+
+function PlayerAutocompleteField({
+  disabled,
+  helperText,
+  icon,
+  id,
+  label,
+  onChange,
+  players,
+  placeholder,
+  value,
+}) {
+  const [focused, setFocused] = useState(false);
+  const suggestions = useMemo(() => filterWorldCupPlayers(players, value), [players, value]);
+  const showSuggestions = focused && !disabled && value.trim().length > 0 && suggestions.length > 0;
+
+  function selectPlayer(player) {
+    onChange(player.name);
+    setFocused(false);
+  }
+
+  return (
+    <div className="input-group autocomplete-field">
+      <label htmlFor={id}>
+        <FieldLabel icon={icon}>{label}</FieldLabel>
+      </label>
+      <div className="autocomplete-shell">
+        <input
+          autoComplete="off"
+          disabled={disabled}
+          id={id}
+          onBlur={() => setFocused(false)}
+          onChange={(event) => onChange(event.target.value)}
+          onFocus={() => setFocused(true)}
+          placeholder={placeholder}
+          type="text"
+          value={value}
+        />
+        {showSuggestions && (
+          <div className="autocomplete-menu" role="listbox">
+            {suggestions.map((player) => (
+              <button
+                className="autocomplete-option"
+                key={`${player.team}:${player.name}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectPlayer(player)}
+                role="option"
+                type="button"
+              >
+                <strong>{player.name}</strong>
+                <small>{player.team}{player.position ? ` - ${player.position}` : ""}</small>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <small>{helperText}</small>
+    </div>
+  );
+}
 
 export function BonusPredictions({ fixtures, bonusPredictions, onSaveBonusPrediction }) {
   const { currentUser, activeLeague } = useApp();
@@ -21,21 +91,31 @@ export function BonusPredictions({ fixtures, bonusPredictions, onSaveBonusPredic
     setRevelationName(existingBonus?.revelationName || "");
   }, [existingBonus?.championTeamId, existingBonus?.topScorerName, existingBonus?.revelationName]);
 
-  const teamsMap = new Map();
-  fixtures.forEach(fixture => {
-    if (fixture.home.id && !teamsMap.has(fixture.home.id)) {
-      teamsMap.set(fixture.home.id, fixture.home);
-    }
-    if (fixture.away.id && !teamsMap.has(fixture.away.id)) {
-      teamsMap.set(fixture.away.id, fixture.away);
-    }
-  });
-  const teams = Array.from(teamsMap.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const teams = useMemo(() => {
+    const teamsMap = new Map();
+
+    fixtures
+      .filter((fixture) => fixture.stageType === "GROUP")
+      .forEach((fixture) => {
+        if (fixture.home.id && !teamsMap.has(fixture.home.id)) {
+          teamsMap.set(fixture.home.id, fixture.home);
+        }
+        if (fixture.away.id && !teamsMap.has(fixture.away.id)) {
+          teamsMap.set(fixture.away.id, fixture.away);
+        }
+      });
+
+    return Array.from(teamsMap.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [fixtures]);
+
+  const players = useMemo(() => getWorldCupPlayers(teams), [teams]);
 
   const hasChanges =
     championTeamId !== (existingBonus?.championTeamId || "") ||
     topScorerName !== (existingBonus?.topScorerName || "") ||
     revelationName !== (existingBonus?.revelationName || "");
+
+  const bonusLocked = Boolean(activeLeague?.settings?.bonusLocked);
 
   async function handleSave() {
     setIsSaving(true);
@@ -50,12 +130,6 @@ export function BonusPredictions({ fixtures, bonusPredictions, onSaveBonusPredic
     }
   }
 
-  const firstMatchKickoff = fixtures.length > 0 
-    ? new Date(Math.min(...fixtures.map(f => new Date(f.kickoff).getTime())))
-    : null;
-    
-  const isClosed = firstMatchKickoff && Date.now() >= firstMatchKickoff.getTime();
-
   return (
     <section className="screen-stack">
       <ScreenHeading
@@ -66,30 +140,21 @@ export function BonusPredictions({ fixtures, bonusPredictions, onSaveBonusPredic
 
       <div className="fixture-card" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px" }}>
         
-        {isClosed && (
+        {bonusLocked && (
           <div className="data-pill" style={{ background: "var(--danger-color)", color: "#fff", alignSelf: "flex-start", marginBottom: "-8px" }}>
             Palpites bonus encerrados
           </div>
         )}
 
         <div className="input-group">
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "bold", marginBottom: "8px" }}>
-            <Trophy size={18} style={{ color: "var(--primary-color)" }} />
-            Selecao Campea
+          <label htmlFor="bonus-champion">
+            <FieldLabel icon={Trophy}>Selecao Campea</FieldLabel>
           </label>
           <select 
+            id="bonus-champion"
             value={championTeamId} 
             onChange={e => setChampionTeamId(e.target.value)}
-            disabled={isClosed}
-            style={{
-              padding: '12px',
-              borderRadius: '8px',
-              background: 'var(--bg-color)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-color)',
-              fontSize: '1rem',
-              width: '100%'
-            }}
+            disabled={bonusLocked}
           >
             <option value="">Selecione o campeao...</option>
             {teams.map(team => (
@@ -101,59 +166,31 @@ export function BonusPredictions({ fixtures, bonusPredictions, onSaveBonusPredic
           </small>
         </div>
 
-        <div className="input-group">
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "bold", marginBottom: "8px" }}>
-            <Target size={18} style={{ color: "var(--primary-color)" }} />
-            Artilheiro da Copa
-          </label>
-          <input 
-            type="text" 
-            placeholder="Ex: Mbappe" 
-            value={topScorerName}
-            onChange={e => setTopScorerName(e.target.value)}
-            disabled={isClosed}
-            style={{
-              padding: '12px',
-              borderRadius: '8px',
-              background: 'var(--bg-color)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-color)',
-              fontSize: '1rem',
-              width: '100%'
-            }}
-          />
-          <small style={{ color: "var(--text-secondary)", marginTop: "4px", display: "block" }}>
-            Vale 10 pontos. Digite apenas o nome ou sobrenome principal.
-          </small>
-        </div>
+        <PlayerAutocompleteField
+          disabled={bonusLocked}
+          helperText="Vale 10 pontos."
+          icon={Target}
+          id="bonus-top-scorer"
+          label="Artilheiro da Copa"
+          onChange={setTopScorerName}
+          players={players}
+          placeholder="Ex: Mbappe"
+          value={topScorerName}
+        />
 
-        <div className="input-group">
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "bold", marginBottom: "8px" }}>
-            <Sparkles size={18} style={{ color: "var(--primary-color)" }} />
-            Jogador Revelacao
-          </label>
-          <input 
-            type="text" 
-            placeholder="Ex: Endrick" 
-            value={revelationName}
-            onChange={e => setRevelationName(e.target.value)}
-            disabled={isClosed}
-            style={{
-              padding: '12px',
-              borderRadius: '8px',
-              background: 'var(--bg-color)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-color)',
-              fontSize: '1rem',
-              width: '100%'
-            }}
-          />
-          <small style={{ color: "var(--text-secondary)", marginTop: "4px", display: "block" }}>
-            Vale 10 pontos. Melhor jogador jovem da FIFA.
-          </small>
-        </div>
+        <PlayerAutocompleteField
+          disabled={bonusLocked}
+          helperText="Vale 10 pontos."
+          icon={Sparkles}
+          id="bonus-revelation"
+          label="Jogador Revelacao"
+          onChange={setRevelationName}
+          players={players}
+          placeholder="Ex: Endrick"
+          value={revelationName}
+        />
 
-        {!isClosed && (
+        {!bonusLocked && (
           <button 
             className="primary-button" 
             onClick={handleSave}

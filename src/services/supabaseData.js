@@ -21,6 +21,8 @@ function mapLeague(row, meta = {}) {
       exactScore: settings.exactScore ?? 5,
       qualifier: settings.qualifier ?? 2,
       qualificationMethod: settings.qualificationMethod ?? 2,
+      scoreFromFixtureIndex: settings.scoreFromFixtureIndex ?? 3,
+      leagueScopedOnly: Boolean(settings.leagueScopedOnly),
     },
   };
 }
@@ -56,6 +58,8 @@ function mapAdminLeague(row) {
     ownerName: row.owner_name || "Sem dono",
     memberCount: row.memberCount || 0,
     predictionCount: row.predictionCount || 0,
+    members: row.members || [],
+    settings: row.settings || {},
     createdAt: row.created_at,
   };
 }
@@ -451,4 +455,33 @@ export async function createAdminRemoteLeague(name, sessionToken, isPublic = fal
 
   if (error) throw error;
   return mapLeague(data, data);
+}
+
+export async function updateAdminRemoteLeague({ leagueId, name, isPublic }, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("admin_update_league", {
+    session_token: sessionToken,
+    p_league_id: leagueId,
+    p_name: name,
+    p_is_public: isPublic,
+  });
+
+  if (error) throw error;
+  return mapLeague(data, data);
+}
+
+export async function upsertAdminRemotePlayer({ username, password, name, role = "player" }, sessionToken) {
+  if (!supabase) throw new Error("Supabase nao configurado.");
+
+  const { data, error } = await supabase.rpc("admin_upsert_player", {
+    session_token: sessionToken,
+    login_username: username,
+    login_password: password,
+    display_name: name,
+    player_role: role,
+  });
+
+  if (error) throw error;
+  return mapProfile(data);
 }

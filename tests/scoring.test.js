@@ -302,6 +302,40 @@ test("buildRanking sem liga ativa retorna ranking pessoal", () => {
   assert.equal(ranking[0].position, 1);
 });
 
+test("buildRanking respeita inicio de pontuacao configurado por liga", () => {
+  const users = [{ id: "user-A", name: "Alice" }];
+  const fixtures = [
+    finishedFixture({ id: "f1", homeScore: 1, awayScore: 0 }),
+    finishedFixture({ id: "f2", homeScore: 1, awayScore: 0 }),
+    finishedFixture({ id: "f3", homeScore: 1, awayScore: 0 }),
+    finishedFixture({ id: "f4", homeScore: 1, awayScore: 0 }),
+  ];
+  const predictions = fixtures.map((fixture) =>
+    prediction({
+      userId: "user-A",
+      fixtureId: fixture.id,
+      leagueId: null,
+      normalOutcome: "HOME",
+      homeScore: 1,
+      awayScore: 0,
+    }),
+  );
+
+  const standardLeagueRanking = buildRanking(users, fixtures, predictions, {
+    ...DEFAULT_SCORING,
+    scoreFromFixtureIndex: 3,
+  });
+  const specialLeagueRanking = buildRanking(users, fixtures, predictions, {
+    ...DEFAULT_SCORING,
+    scoreFromFixtureIndex: 0,
+  });
+
+  assert.equal(standardLeagueRanking[0].points, 5);
+  assert.equal(standardLeagueRanking[0].predictions, 1);
+  assert.equal(specialLeagueRanking[0].points, 20);
+  assert.equal(specialLeagueRanking[0].predictions, 4);
+});
+
 test("buildRanking desempate: exacts > knockout > predictions > nome", () => {
   const users = [
     { id: "user-A", name: "Alice" },

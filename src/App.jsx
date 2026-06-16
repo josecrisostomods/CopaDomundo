@@ -45,6 +45,8 @@ function AppContent() {
     refreshAdminState,
     adminUpdateFixtureResult,
     adminCreateLeague,
+    adminUpdateLeague,
+    adminUpsertPlayer,
     adminDeleteUser,
     adminDeleteLeague,
     handleLogout,
@@ -161,7 +163,9 @@ function AppContent() {
             onDeleteLeague={adminDeleteLeague}
             onDeleteUser={adminDeleteUser}
             onRefresh={refreshAdminState}
+            onUpdateLeague={adminUpdateLeague}
             onUpdateFixtureResult={adminUpdateFixtureResult}
+            onUpsertPlayer={adminUpsertPlayer}
           />
         )}
       </main>

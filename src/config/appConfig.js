@@ -9,6 +9,7 @@ export const STORAGE = {
   fixturesVersion: "copa-fixtures-version",
   lastSync: "copa-last-sync",
   predictions: "copa-predictions",
+  bonusPredictions: "copa-bonus-predictions",
 };
 
 export const FIXTURE_DATA_VERSION = "2026-pt-br-confirmed-results-v9";

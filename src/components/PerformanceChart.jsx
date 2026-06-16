@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { scorePrediction, DEFAULT_SCORING } from "../lib/scoring";
+import { scorePrediction, DEFAULT_SCORING, eligibleFixturesForScoring } from "../lib/scoring";
 import { formatDate } from "../utils/formatters";
 
 // Generate colors for lines
@@ -27,7 +27,11 @@ const COLORS = [
 export function PerformanceChart({ users, fixtures, predictions, settings }) {
   const chartData = useMemo(() => {
     // 1. Get finished fixtures only
-    const finishedFixtures = fixtures.filter((f) => f.status === "FINISHED");
+    const finishedFixtures = eligibleFixturesForScoring(
+      fixtures.filter((f) => f.status === "FINISHED"),
+      settings || DEFAULT_SCORING,
+      fixtures,
+    );
     if (!finishedFixtures.length) return [];
 
     // 2. Group by date (YYYY-MM-DD)

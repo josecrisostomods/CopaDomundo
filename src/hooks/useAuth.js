@@ -13,14 +13,36 @@ import {
 
 function getInitialProfile() {
   const storedSession = readStorage(STORAGE.session, null);
-  if (!storedSession) return null;
+  if (!storedSession) {
+    return !isSupabaseConfigured || !supabase ? localProfileFor() : null;
+  }
 
   const storedProfile = readStorage(STORAGE.profile, null);
-  return storedProfile?.id === "user-demo" ? null : storedProfile;
+  if (storedProfile?.id === "user-demo") return null;
+  return storedProfile || (!isSupabaseConfigured || !supabase ? localProfileFor() : null);
 }
 
 function getInitialSessionToken() {
-  return readStorage(STORAGE.session, null);
+  return readStorage(STORAGE.session, null) || (!isSupabaseConfigured || !supabase ? "local-session" : null);
+}
+
+function avatarFor(name) {
+  return (name || "JL").slice(0, 2).toUpperCase();
+}
+
+function localProfileFor(payload = {}) {
+  const username = payload.username?.trim() || "jogador-local";
+  const name = payload.name?.trim() || username;
+
+  return {
+    id: "user-local",
+    username,
+    name,
+    avatar: avatarFor(name),
+    role: "admin",
+    isAdmin: true,
+    displayNameSet: true,
+  };
 }
 
 export function useAuth() {
@@ -33,7 +55,11 @@ export function useAuth() {
 
   async function handlePlayerAuth(payload, mode) {
     if (!isSupabaseConfigured || !supabase) {
-      throw new Error("Login indisponivel no momento.");
+      const localProfile = localProfileFor(payload);
+      setSessionToken("local-session");
+      setProfile(localProfile);
+      setRecoveryCode(null);
+      return { sessionToken: "local-session", profile: localProfile };
     }
 
     if (!payload.username || !payload.password) {
@@ -68,6 +94,17 @@ export function useAuth() {
 
   async function updateProfile(draft) {
     if (!profile) return null;
+    if (!isSupabaseConfigured || !supabase) {
+      const saved = {
+        ...profile,
+        name: draft.name?.trim() || profile.name,
+        avatar: avatarFor(draft.name || profile.name),
+        displayNameSet: true,
+      };
+      setProfile(saved);
+      return saved;
+    }
+
     const saved = await upsertProfile(draft, sessionToken);
     setProfile((prev) => ({ ...prev, ...saved }));
     return saved;
@@ -75,6 +112,12 @@ export function useAuth() {
 
   async function generateRecoveryCode() {
     if (!sessionToken) throw new Error("Sessao invalida.");
+    if (!isSupabaseConfigured || !supabase) {
+      const code = `LOCAL-${Date.now().toString(36).toUpperCase()}`;
+      setRecoveryCode(code);
+      return code;
+    }
+
     const code = await rotateRecoveryCode(sessionToken);
     setRecoveryCode(code);
     return code;

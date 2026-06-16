@@ -120,12 +120,13 @@ create table if not exists public.predictions (
 );
 
 alter table public.predictions drop constraint if exists predictions_league_id_user_id_fixture_id_key;
+drop index if exists public.predictions_user_fixture_unique;
 
 with ranked_predictions as (
   select
     ctid,
     row_number() over (
-      partition by user_id, fixture_id
+      partition by user_id, coalesce(league_id::text, 'global'), fixture_id
       order by updated_at desc, created_at desc, id desc
     ) as row_number
   from public.predictions
@@ -135,12 +136,13 @@ using ranked_predictions ranked
 where p.ctid = ranked.ctid
 and ranked.row_number > 1;
 
-update public.predictions
-set league_id = null
-where league_id is not null;
+create unique index if not exists predictions_user_fixture_global_unique
+on public.predictions (user_id, fixture_id)
+where league_id is null;
 
-create unique index if not exists predictions_user_fixture_unique
-on public.predictions (user_id, fixture_id);
+create unique index if not exists predictions_user_league_fixture_unique
+on public.predictions (user_id, league_id, fixture_id)
+where league_id is not null;
 
 create table if not exists public.league_settings (
   league_id uuid primary key references public.leagues(id) on delete cascade,
@@ -148,8 +150,13 @@ create table if not exists public.league_settings (
   points_exact_score int not null default 5,
   points_qualifier int not null default 2,
   points_qualification_method int not null default 2,
+  score_from_fixture_index int not null default 3,
+  league_scoped_only boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+alter table public.league_settings add column if not exists score_from_fixture_index int not null default 3;
+alter table public.league_settings add column if not exists league_scoped_only boolean not null default false;
 
 -- Migrar ligas existentes para o novo padrão de pontuação
 update public.league_settings
@@ -253,6 +260,7 @@ drop function if exists public.admin_delete_user(text, uuid);
 drop function if exists public.admin_delete_league(text, uuid);
 drop function if exists public.admin_create_league(text, text, boolean);
 drop function if exists public.admin_update_league(text, uuid, text, boolean);
+drop function if exists public.admin_upsert_player(text, text, text, text, text);
 drop function if exists public.admin_player_id_from_session(text);
 drop function if exists public.admin_ensure_fixture_for_update(text, jsonb);
 drop function if exists public.ensure_fixture_for_prediction(text, uuid, jsonb);
@@ -638,6 +646,15 @@ begin
     'owner_name', league_data.owner_name,
     'memberCount', league_data.member_count,
     'predictionCount', league_data.prediction_count,
+    'members', league_data.members,
+    'settings', jsonb_build_object(
+      'outcome', coalesce(league_data.points_outcome, 2),
+      'exactScore', coalesce(league_data.points_exact_score, 5),
+      'qualifier', coalesce(league_data.points_qualifier, 2),
+      'qualificationMethod', coalesce(league_data.points_qualification_method, 2),
+      'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 3),
+      'leagueScopedOnly', coalesce(league_data.league_scoped_only, false)
+    ),
     'created_at', league_data.created_at
   ) order by league_data.created_at desc), '[]'::jsonb)
   into leagues_json
@@ -645,6 +662,12 @@ begin
     select
       l.*,
       owner.name as owner_name,
+      ls.points_outcome,
+      ls.points_exact_score,
+      ls.points_qualifier,
+      ls.points_qualification_method,
+      ls.score_from_fixture_index,
+      ls.league_scoped_only,
       (select count(*)::int from public.league_members lm where lm.league_id = l.id) as member_count,
       (
         select count(*)::int
@@ -655,9 +678,27 @@ begin
           where lm.league_id = l.id
           and lm.user_id = pr.user_id
         )
-      ) as prediction_count
+        and (
+          (coalesce(ls.league_scoped_only, false) and pr.league_id = l.id)
+          or (not coalesce(ls.league_scoped_only, false) and (pr.league_id is null or pr.league_id = l.id))
+        )
+      ) as prediction_count,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', member_profile.id,
+          'username', member_profile.username,
+          'name', member_profile.name,
+          'avatar', member_profile.avatar,
+          'role', member_profile.role,
+          'display_name_set', member_profile.display_name_set
+        ) order by member_profile.name)
+        from public.league_members member_link
+        join public.profiles member_profile on member_profile.id = member_link.user_id
+        where member_link.league_id = l.id
+      ), '[]'::jsonb) as members
     from public.leagues l
     left join public.profiles owner on owner.id = l.owner_id
+    left join public.league_settings ls on ls.league_id = l.id
   ) league_data;
 
   return jsonb_build_object(
@@ -1064,6 +1105,73 @@ begin
 end;
 $$;
 
+create or replace function public.admin_upsert_player(
+  session_token text,
+  login_username text,
+  login_password text,
+  display_name text,
+  player_role text default 'player'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized_username text;
+  next_name text;
+  next_role text;
+  saved_player public.profiles;
+begin
+  perform public.admin_player_id_from_session(session_token);
+
+  normalized_username := lower(trim(coalesce(login_username, '')));
+  next_name := coalesce(nullif(trim(display_name), ''), normalized_username);
+  next_role := case when lower(trim(coalesce(player_role, 'player'))) = 'admin' then 'admin' else 'player' end;
+
+  if normalized_username = '' then
+    raise exception 'Usuario obrigatorio';
+  end if;
+
+  if not exists (select 1 from public.profiles where username = normalized_username)
+     and nullif(login_password, '') is null then
+    raise exception 'Senha obrigatoria para novo usuario';
+  end if;
+
+  insert into public.profiles (
+    username,
+    password_hash,
+    recovery_code_hash,
+    name,
+    avatar,
+    role,
+    display_name_set
+  )
+  values (
+    normalized_username,
+    case when nullif(login_password, '') is null then null else crypt(login_password, gen_salt('bf')) end,
+    null,
+    next_name,
+    upper(substr(next_name, 1, 2)),
+    next_role,
+    true
+  )
+  on conflict (username) do update
+  set
+    password_hash = case
+      when nullif(login_password, '') is null then public.profiles.password_hash
+      else excluded.password_hash
+    end,
+    name = excluded.name,
+    avatar = excluded.avatar,
+    role = excluded.role,
+    display_name_set = true
+  returning * into saved_player;
+
+  return public.player_payload(saved_player);
+end;
+$$;
+
 create or replace function public.update_player_profile(session_token text, display_name text)
 returns jsonb
 language plpgsql
@@ -1124,7 +1232,9 @@ begin
       'outcome', coalesce(league_data.points_outcome, 2),
       'exactScore', coalesce(league_data.points_exact_score, 5),
       'qualifier', coalesce(league_data.points_qualifier, 2),
-      'qualificationMethod', coalesce(league_data.points_qualification_method, 2)
+      'qualificationMethod', coalesce(league_data.points_qualification_method, 2),
+      'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 3),
+      'leagueScopedOnly', coalesce(league_data.league_scoped_only, false)
     )
   ) order by league_data.created_at desc), '[]'::jsonb)
   into leagues_json
@@ -1141,6 +1251,8 @@ begin
       ls.points_exact_score,
       ls.points_qualifier,
       ls.points_qualification_method,
+      ls.score_from_fixture_index,
+      ls.league_scoped_only,
       (select count(*)::int from public.league_members count_lm where count_lm.league_id = l.id) as member_count
     from public.league_members lm
     join public.leagues l on l.id = lm.league_id
@@ -1160,7 +1272,9 @@ begin
       'outcome', coalesce(public_league_data.points_outcome, 2),
       'exactScore', coalesce(public_league_data.points_exact_score, 5),
       'qualifier', coalesce(public_league_data.points_qualifier, 2),
-      'qualificationMethod', coalesce(public_league_data.points_qualification_method, 2)
+      'qualificationMethod', coalesce(public_league_data.points_qualification_method, 2),
+      'scoreFromFixtureIndex', coalesce(public_league_data.score_from_fixture_index, 3),
+      'leagueScopedOnly', coalesce(public_league_data.league_scoped_only, false)
     )
   ) order by public_league_data.member_count desc, public_league_data.created_at desc), '[]'::jsonb)
   into public_leagues_json
@@ -1174,6 +1288,8 @@ begin
       ls.points_exact_score,
       ls.points_qualifier,
       ls.points_qualification_method,
+      ls.score_from_fixture_index,
+      ls.league_scoped_only,
       (select count(*)::int from public.league_members count_lm where count_lm.league_id = l.id) as member_count
     from public.leagues l
     left join public.league_settings ls on ls.league_id = l.id
@@ -1702,50 +1818,95 @@ begin
     raise exception 'Palpite fechado para esta partida';
   end if;
 
-  insert into public.predictions (
-    league_id,
-    user_id,
-    fixture_id,
-    normal_outcome,
-    home_score,
-    away_score,
-    qualifier_team_id,
-    qualification_method,
-    extra_home_score,
-    extra_away_score,
-    penalties_home,
-    penalties_away,
-    updated_at
-  )
-  values (
-    null,
-    current_player_id,
-    p_fixture_id,
-    p_normal_outcome,
-    p_home_score,
-    p_away_score,
-    p_qualifier_team_id,
-    p_qualification_method,
-    p_extra_home_score,
-    p_extra_away_score,
-    p_penalties_home,
-    p_penalties_away,
-    now()
-  )
-  on conflict (user_id, fixture_id) do update
-  set
-    league_id = null,
-    normal_outcome = excluded.normal_outcome,
-    home_score = excluded.home_score,
-    away_score = excluded.away_score,
-    qualifier_team_id = excluded.qualifier_team_id,
-    qualification_method = excluded.qualification_method,
-    extra_home_score = excluded.extra_home_score,
-    extra_away_score = excluded.extra_away_score,
-    penalties_home = excluded.penalties_home,
-    penalties_away = excluded.penalties_away,
-    updated_at = now()
-  returning * into saved_prediction;
+  if p_league_id is null then
+    insert into public.predictions (
+      league_id,
+      user_id,
+      fixture_id,
+      normal_outcome,
+      home_score,
+      away_score,
+      qualifier_team_id,
+      qualification_method,
+      extra_home_score,
+      extra_away_score,
+      penalties_home,
+      penalties_away,
+      updated_at
+    )
+    values (
+      null,
+      current_player_id,
+      p_fixture_id,
+      p_normal_outcome,
+      p_home_score,
+      p_away_score,
+      p_qualifier_team_id,
+      p_qualification_method,
+      p_extra_home_score,
+      p_extra_away_score,
+      p_penalties_home,
+      p_penalties_away,
+      now()
+    )
+    on conflict (user_id, fixture_id) where league_id is null do update
+    set
+      normal_outcome = excluded.normal_outcome,
+      home_score = excluded.home_score,
+      away_score = excluded.away_score,
+      qualifier_team_id = excluded.qualifier_team_id,
+      qualification_method = excluded.qualification_method,
+      extra_home_score = excluded.extra_home_score,
+      extra_away_score = excluded.extra_away_score,
+      penalties_home = excluded.penalties_home,
+      penalties_away = excluded.penalties_away,
+      updated_at = now()
+    returning * into saved_prediction;
+  else
+    insert into public.predictions (
+      league_id,
+      user_id,
+      fixture_id,
+      normal_outcome,
+      home_score,
+      away_score,
+      qualifier_team_id,
+      qualification_method,
+      extra_home_score,
+      extra_away_score,
+      penalties_home,
+      penalties_away,
+      updated_at
+    )
+    values (
+      p_league_id,
+      current_player_id,
+      p_fixture_id,
+      p_normal_outcome,
+      p_home_score,
+      p_away_score,
+      p_qualifier_team_id,
+      p_qualification_method,
+      p_extra_home_score,
+      p_extra_away_score,
+      p_penalties_home,
+      p_penalties_away,
+      now()
+    )
+    on conflict (user_id, league_id, fixture_id) where league_id is not null do update
+    set
+      normal_outcome = excluded.normal_outcome,
+      home_score = excluded.home_score,
+      away_score = excluded.away_score,
+      qualifier_team_id = excluded.qualifier_team_id,
+      qualification_method = excluded.qualification_method,
+      extra_home_score = excluded.extra_home_score,
+      extra_away_score = excluded.extra_away_score,
+      penalties_home = excluded.penalties_home,
+      penalties_away = excluded.penalties_away,
+      updated_at = now()
+    returning * into saved_prediction;
+  end if;
 
   return saved_prediction;
 end;
@@ -1827,6 +1988,7 @@ grant execute on function public.admin_delete_user(text, uuid) to anon, authenti
 grant execute on function public.admin_delete_league(text, uuid) to anon, authenticated;
 grant execute on function public.admin_create_league(text, text, boolean) to anon, authenticated;
 grant execute on function public.admin_update_league(text, uuid, text, boolean) to anon, authenticated;
+grant execute on function public.admin_upsert_player(text, text, text, text, text) to anon, authenticated;
 
 revoke execute on function public.create_player_session(uuid) from public, anon, authenticated;
 revoke execute on function public.player_id_from_session(text) from public, anon, authenticated;

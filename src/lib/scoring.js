@@ -3,6 +3,7 @@ export const DEFAULT_SCORING = {
   exactScore: 5,
   qualifier: 2,
   qualificationMethod: 2,
+  scoreFromFixtureIndex: 0,
 };
 
 const OUTCOME_DETAIL_LABEL = "Vencedor/empate";
@@ -64,14 +65,34 @@ export function scorePrediction(fixture, prediction, scoring = DEFAULT_SCORING) 
   return { total, details };
 }
 
-export function buildRanking(users, fixtures, predictions, scoring = DEFAULT_SCORING) {
+export function eligibleFixturesForScoring(fixtures, scoring = DEFAULT_SCORING, fixtureOrder = fixtures) {
+  const startIndex = Number(scoring.scoreFromFixtureIndex || 0);
+  if (startIndex <= 0) return fixtures;
+
+  const skippedFixtureIds = new Set(
+    [...fixtureOrder]
+      .sort((a, b) => {
+        const dateDiff = new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime();
+        return dateDiff || String(a.id).localeCompare(String(b.id));
+      })
+      .slice(0, startIndex)
+      .map((fixture) => fixture.id),
+  );
+
+  return fixtures.filter((fixture) => !skippedFixtureIds.has(fixture.id));
+}
+
+export function buildRanking(users, fixtures, predictions, scoring = DEFAULT_SCORING, fixtureOrder = fixtures) {
+  const scoringFixtures = eligibleFixturesForScoring(fixtures, scoring, fixtureOrder);
+
   return users
     .map((user) => {
       const userPredictions = predictions.filter((prediction) => prediction.userId === user.id);
       const stats = userPredictions.reduce(
         (acc, prediction) => {
-          const fixture = fixtures.find((item) => item.id === prediction.fixtureId);
+          const fixture = scoringFixtures.find((item) => item.id === prediction.fixtureId);
           const result = fixture ? scorePrediction(fixture, prediction, scoring) : { total: 0, details: [] };
+          if (!fixture) return acc;
           acc.points += result.total;
           acc.predictions += 1;
           if (result.details.some((detail) => detail.label === OUTCOME_DETAIL_LABEL)) acc.outcomes += 1;

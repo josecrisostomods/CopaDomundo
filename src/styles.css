@@ -72,6 +72,67 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(53, 194, 255, 0.14);
 }
 
+.bonus-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+}
+
+.bonus-field-label svg {
+  color: var(--green);
+}
+
+.autocomplete-shell {
+  position: relative;
+}
+
+.autocomplete-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101b2e;
+  box-shadow: var(--shadow);
+}
+
+.autocomplete-option {
+  display: grid;
+  width: 100%;
+  min-height: 48px;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.autocomplete-option:hover,
+.autocomplete-option:focus {
+  background: rgba(53, 194, 255, 0.14);
+}
+
+.autocomplete-option strong,
+.autocomplete-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.autocomplete-option small {
+  color: var(--muted);
+}
+
 label {
   display: grid;
   gap: 8px;
@@ -1133,6 +1194,10 @@ legend {
   padding: 12px;
 }
 
+.league-admin-row {
+  grid-template-columns: minmax(260px, 1.4fr) auto auto auto auto;
+}
+
 .admin-row-info {
   display: grid;
   gap: 3px;
@@ -1153,13 +1218,49 @@ legend {
   font-weight: 800;
 }
 
+.league-admin-editor {
+  gap: 8px;
+}
+
+.league-admin-editor label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.league-admin-editor input {
+  min-width: 0;
+}
+
+.admin-row-info .league-members-line {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.icon-secondary-button,
 .icon-danger-button {
   display: grid;
   place-items: center;
   width: 40px;
   height: 40px;
-  border: 1px solid rgba(233, 79, 100, 0.38);
   border-radius: 8px;
+}
+
+.icon-secondary-button {
+  border: 1px solid rgba(123, 211, 255, 0.38);
+  background: rgba(123, 211, 255, 0.1);
+  color: #b9ebff;
+}
+
+.icon-secondary-button:hover:not(:disabled) {
+  border-color: rgba(123, 211, 255, 0.72);
+  background: rgba(123, 211, 255, 0.17);
+}
+
+.icon-danger-button {
+  border: 1px solid rgba(233, 79, 100, 0.38);
   background: rgba(233, 79, 100, 0.11);
   color: #ffb6c2;
 }

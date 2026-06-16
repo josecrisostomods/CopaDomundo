@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   CalendarCheck2,
   Loader2,
+  Save,
   ShieldCheck,
   Trash2,
   Trophy,
+  UserPlus,
   UserRoundX,
   UsersRound,
 } from "lucide-react";
@@ -30,7 +32,9 @@ export function AdminView({
   onDeleteLeague,
   onDeleteUser,
   onRefresh,
+  onUpdateLeague,
   onUpdateFixtureResult,
+  onUpsertPlayer,
 }) {
   const [selectedFixtureId, setSelectedFixtureId] = useState(fixtures[0]?.id || "");
   const selectedFixture = useMemo(
@@ -40,6 +44,13 @@ export function AdminView({
   const [resultForm, setResultForm] = useState(() => getInitialResultForm(selectedFixture));
   const [leagueName, setLeagueName] = useState("");
   const [leagueVisibility, setLeagueVisibility] = useState("public");
+  const [leagueDrafts, setLeagueDrafts] = useState({});
+  const [playerForm, setPlayerForm] = useState({
+    username: "joao.vitor",
+    password: "",
+    name: "João Vitor",
+    role: "player",
+  });
   const [message, setMessage] = useState("");
   const [busyAction, setBusyAction] = useState("");
 
@@ -47,6 +58,23 @@ export function AdminView({
     if (!selectedFixture) return;
     setResultForm(getInitialResultForm(selectedFixture));
   }, [selectedFixture]);
+
+  const users = useMemo(() => adminState.users || [], [adminState.users]);
+  const leagues = useMemo(() => adminState.leagues || [], [adminState.leagues]);
+
+  useEffect(() => {
+    setLeagueDrafts(
+      Object.fromEntries(
+        leagues.map((league) => [
+          league.id,
+          {
+            name: league.name,
+            isPublic: Boolean(league.isPublic),
+          },
+        ]),
+      ),
+    );
+  }, [leagues]);
 
   async function submitResult(event) {
     event.preventDefault();
@@ -88,6 +116,46 @@ export function AdminView({
     }
   }
 
+  async function submitPlayer(event) {
+    event.preventDefault();
+    setBusyAction("player");
+    setMessage("");
+
+    try {
+      const username = requiredText(playerForm.username, "Usuario", 40).toLowerCase();
+      const name = requiredText(playerForm.name, "Nome", 60);
+      const password = requiredText(playerForm.password, "Senha", 80);
+      await onUpsertPlayer({
+        username,
+        password,
+        name,
+        role: playerForm.role,
+      });
+      setPlayerForm((current) => ({ ...current, password: "" }));
+      setMessage("Usuario salvo.");
+    } catch (error) {
+      setMessage(error.message || "Nao foi possivel salvar o usuario.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function updateLeague(league) {
+    const draft = leagueDrafts[league.id] || { name: league.name, isPublic: league.isPublic };
+    setBusyAction(`league-save-${league.id}`);
+    setMessage("");
+
+    try {
+      const name = requiredText(draft.name, "Nome da liga", 40);
+      await onUpdateLeague({ leagueId: league.id, name, isPublic: Boolean(draft.isPublic) });
+      setMessage("Liga atualizada.");
+    } catch (error) {
+      setMessage(error.message || "Nao foi possivel atualizar a liga.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function deleteUser(user) {
     const confirmed = window.confirm(`Excluir o usuario ${user.name}? Essa acao apaga palpites e participacoes dele.`);
     if (!confirmed) return;
@@ -122,8 +190,6 @@ export function AdminView({
     }
   }
 
-  const users = adminState.users || [];
-  const leagues = adminState.leagues || [];
   const totalPredictions = users.reduce((sum, user) => sum + user.predictionCount, 0);
 
   return (
@@ -284,6 +350,59 @@ export function AdminView({
             </button>
           </form>
         </section>
+
+        <section className="panel form-panel">
+          <div className="panel-title">
+            <UserPlus size={20} />
+            <h2>Criar ou alterar usuario</h2>
+          </div>
+
+          <form className="profile-form" onSubmit={submitPlayer}>
+            <label>
+              Usuario
+              <input
+                value={playerForm.username}
+                onChange={(event) => setPlayerForm({ ...playerForm, username: event.target.value })}
+                placeholder="joao.vitor"
+                maxLength={40}
+                autoComplete="username"
+              />
+            </label>
+            <label>
+              Nome
+              <input
+                value={playerForm.name}
+                onChange={(event) => setPlayerForm({ ...playerForm, name: event.target.value })}
+                placeholder="João Vitor"
+                maxLength={60}
+              />
+            </label>
+            <label>
+              Senha
+              <input
+                value={playerForm.password}
+                onChange={(event) => setPlayerForm({ ...playerForm, password: event.target.value })}
+                placeholder="Digite uma senha para entregar"
+                maxLength={80}
+                type="password"
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              Perfil
+              <select
+                value={playerForm.role}
+                onChange={(event) => setPlayerForm({ ...playerForm, role: event.target.value })}
+              >
+                <option value="player">Jogador</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <button className="secondary-button full" disabled={busyAction === "player"}>
+              {busyAction === "player" ? "Salvando..." : "Salvar usuario"}
+            </button>
+          </form>
+        </section>
       </div>
 
       <section className="panel list-panel">
@@ -325,14 +444,67 @@ export function AdminView({
         <div className="admin-table">
           {leagues.map((league) => (
             <article key={league.id} className="admin-row league-admin-row">
-              <div className="admin-row-info">
-                <strong>{league.name}</strong>
+              <div className="admin-row-info league-admin-editor">
+                <label>
+                  Nome da liga
+                  <input
+                    value={leagueDrafts[league.id]?.name ?? league.name}
+                    onChange={(event) =>
+                      setLeagueDrafts((items) => ({
+                        ...items,
+                        [league.id]: {
+                          ...(items[league.id] || { isPublic: league.isPublic }),
+                          name: event.target.value,
+                        },
+                      }))
+                    }
+                    maxLength={40}
+                  />
+                </label>
+                <div className="segmented compact-segmented">
+                  <button
+                    type="button"
+                    className={leagueDrafts[league.id]?.isPublic ? "active" : ""}
+                    onClick={() =>
+                      setLeagueDrafts((items) => ({
+                        ...items,
+                        [league.id]: { ...(items[league.id] || { name: league.name }), isPublic: true },
+                      }))
+                    }
+                  >
+                    Publica
+                  </button>
+                  <button
+                    type="button"
+                    className={!leagueDrafts[league.id]?.isPublic ? "active" : ""}
+                    onClick={() =>
+                      setLeagueDrafts((items) => ({
+                        ...items,
+                        [league.id]: { ...(items[league.id] || { name: league.name }), isPublic: false },
+                      }))
+                    }
+                  >
+                    Privada
+                  </button>
+                </div>
                 <small>
                   {league.isPublic ? "Publica" : "Privada"} - codigo {league.code} - dono {league.ownerName}
+                </small>
+                <small className="league-members-line">
+                  Membros: {(league.members || []).map((member) => member.name || member.username).join(", ") || "sem membros"}
                 </small>
               </div>
               <span>{league.memberCount} membro(s)</span>
               <span>{league.predictionCount} palpite(s)</span>
+              <button
+                className="icon-secondary-button"
+                type="button"
+                onClick={() => updateLeague(league)}
+                disabled={busyAction === `league-save-${league.id}`}
+                title="Salvar liga"
+              >
+                {busyAction === `league-save-${league.id}` ? <Loader2 size={17} className="spin-icon" /> : <Save size={17} />}
+              </button>
               <button
                 className="icon-danger-button"
                 type="button"

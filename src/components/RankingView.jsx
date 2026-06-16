@@ -37,7 +37,7 @@ export function RankingView({ activeLeague, ranking: globalRanking, fixtures, pr
       filteredFixtures = fixtures.filter(f => f.kickoff.startsWith(dateStr));
     }
 
-    return buildRanking(users, filteredFixtures, predictions, activeLeague?.settings);
+    return buildRanking(users, filteredFixtures, predictions, activeLeague?.settings, fixtures);
   }, [period, globalRanking, fixtures, predictions, users, activeLeague]);
 
   const finished = fixtures.filter((fixture) => fixture.status === "FINISHED").length;

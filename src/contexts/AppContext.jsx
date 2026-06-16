@@ -11,6 +11,8 @@ import {
   fetchAdminState,
   fetchRemoteState,
   updateRemoteFixtureResult,
+  updateAdminRemoteLeague,
+  upsertAdminRemotePlayer,
 } from "../services/supabaseData";
 
 import { useAuth } from "../hooks/useAuth";
@@ -19,6 +21,96 @@ import { useLeagues } from "../hooks/useLeagues";
 import { usePredictions } from "../hooks/usePredictions";
 
 const AppContext = createContext(null);
+
+function avatarFor(name) {
+  return (name || "??").slice(0, 2).toUpperCase();
+}
+
+function getPredictionTime(prediction) {
+  return prediction?.updatedAt ? new Date(prediction.updatedAt).getTime() : 0;
+}
+
+function selectLeaguePredictions(predictions, activeLeague, users, currentUser) {
+  if (!activeLeague) {
+    return predictions.filter((prediction) => prediction.userId === currentUser?.id && !prediction.leagueId);
+  }
+
+  const leagueUserIds = new Set(users.map((user) => user.id));
+
+  if (activeLeague.settings?.leagueScopedOnly) {
+    return predictions.filter(
+      (prediction) => prediction.leagueId === activeLeague.id && leagueUserIds.has(prediction.userId),
+    );
+  }
+
+  const byUserAndFixture = new Map();
+
+  for (const prediction of predictions) {
+    if (!leagueUserIds.has(prediction.userId)) continue;
+    if (prediction.leagueId && prediction.leagueId !== activeLeague.id) continue;
+
+    const key = `${prediction.userId}:${prediction.fixtureId}`;
+    const current = byUserAndFixture.get(key);
+    const isLeaguePrediction = prediction.leagueId === activeLeague.id;
+    const currentIsLeaguePrediction = current?.leagueId === activeLeague.id;
+
+    if (
+      !current ||
+      (isLeaguePrediction && !currentIsLeaguePrediction) ||
+      (isLeaguePrediction === currentIsLeaguePrediction && getPredictionTime(prediction) >= getPredictionTime(current))
+    ) {
+      byUserAndFixture.set(key, prediction);
+    }
+  }
+
+  return Array.from(byUserAndFixture.values());
+}
+
+function localAdminStateFor({ leagues, membersByLeague, predictions, currentUser }) {
+  const usersById = new Map();
+
+  if (currentUser) usersById.set(currentUser.id, currentUser);
+
+  for (const members of Object.values(membersByLeague || {})) {
+    for (const member of members || []) {
+      usersById.set(member.id, member);
+    }
+  }
+
+  const users = Array.from(usersById.values()).map((user) => ({
+    ...user,
+    leagueCount: leagues.filter((league) =>
+      (membersByLeague[league.id] || []).some((member) => member.id === user.id),
+    ).length,
+    predictionCount: predictions.filter((prediction) => prediction.userId === user.id).length,
+  }));
+
+  const adminLeagues = leagues.map((league) => {
+    const members = membersByLeague[league.id] || [];
+    const memberIds = new Set(members.map((member) => member.id));
+    const predictionCount = predictions.filter((prediction) => {
+      if (!memberIds.has(prediction.userId)) return false;
+      if (league.settings?.leagueScopedOnly) return prediction.leagueId === league.id;
+      return !prediction.leagueId || prediction.leagueId === league.id;
+    }).length;
+
+    return {
+      ...league,
+      ownerName: league.ownerId === currentUser?.id ? currentUser.name : "Sem dono",
+      memberCount: members.length,
+      predictionCount,
+      members,
+    };
+  });
+
+  return {
+    loading: false,
+    message: "Painel local.",
+    users,
+    leagues: adminLeagues,
+    totals: { users: users.length, leagues: adminLeagues.length },
+  };
+}
 
 export function useApp() {
   const context = useContext(AppContext);
@@ -168,20 +260,29 @@ export function AppProvider({ children }) {
     if (!currentUser) return [];
     if (!activeLeague?.id) return [currentUser];
     const leagueMembers = membersByLeague[activeLeague.id] || [];
+    if (!leagueMembers.length) return [currentUser];
+    if (!leagueMembers.some((user) => user.id === currentUser.id)) return leagueMembers;
     const withoutCurrent = leagueMembers.filter((user) => user.id !== currentUser.id);
     return [currentUser, ...withoutCurrent];
   }, [activeLeague?.id, currentUser, membersByLeague]);
 
-  const leagueUserIds = new Set(users.map((user) => user.id));
-  const leaguePredictions = activeLeague
-    ? predictions.filter((prediction) => leagueUserIds.has(prediction.userId))
-    : predictions.filter((prediction) => prediction.userId === currentUser?.id);
-  const userPredictions = predictions.filter((prediction) => prediction.userId === currentUser?.id);
+  const leaguePredictions = useMemo(
+    () => selectLeaguePredictions(predictions, activeLeague, users, currentUser),
+    [predictions, activeLeague, users, currentUser],
+  );
+  const userPredictions = predictions.filter((prediction) => prediction.userId === currentUser?.id && !prediction.leagueId);
   const ranking = useMemo(
     () => buildRanking(users, fixtures, leaguePredictions, activeLeague?.settings || DEFAULT_SCORING),
     [users, fixtures, leaguePredictions, activeLeague?.settings],
   );
   const profileRank = ranking.find((item) => item.id === currentUser?.id);
+  const displayedAdminState = useMemo(
+    () =>
+      isSupabaseConfigured
+        ? adminState
+        : localAdminStateFor({ leagues, membersByLeague, predictions, currentUser }),
+    [adminState, leagues, membersByLeague, predictions, currentUser],
+  );
 
   async function handlePlayerAuth(payload, mode) {
     await authPlayerAuth(payload, mode);
@@ -189,6 +290,7 @@ export function AppProvider({ children }) {
     setPublicLeagues([]);
     setActiveLeagueId(null);
     setPredictions([]);
+    setBonusPredictions([]);
     setMembersByLeague({});
     setActiveTab("home");
   }
@@ -286,6 +388,12 @@ export function AppProvider({ children }) {
   async function refreshAdminState() {
     if (!currentUser?.isAdmin || !sessionToken) return null;
 
+    if (!isSupabaseConfigured) {
+      const localAdminState = localAdminStateFor({ leagues, membersByLeague, predictions, currentUser });
+      setAdminState(localAdminState);
+      return localAdminState;
+    }
+
     setAdminState((current) => ({ ...current, loading: true, message: "Atualizando painel admin..." }));
 
     try {
@@ -331,6 +439,12 @@ export function AppProvider({ children }) {
 
   async function adminCreateLeague(name, isPublic) {
     try {
+      if (!isSupabaseConfigured) {
+        const league = await leaguesCreateLeague(name, isPublic);
+        addToast("Liga criada pelo admin.", "success");
+        return league;
+      }
+
       const league = await createAdminRemoteLeague(name, sessionToken, isPublic);
       setLeagues((items) => [league, ...items.filter((item) => item.id !== league.id)]);
       setActiveLeagueId(league.id);
@@ -345,6 +459,22 @@ export function AppProvider({ children }) {
 
   async function adminDeleteUser(userId) {
     try {
+      if (!isSupabaseConfigured) {
+        if (userId === currentUser?.id) throw new Error("Voce nao pode excluir sua propria conta.");
+        setPredictions((items) => items.filter((prediction) => prediction.userId !== userId));
+        setBonusPredictions((items) => items.filter((prediction) => prediction.userId !== userId));
+        setMembersByLeague((items) =>
+          Object.fromEntries(
+            Object.entries(items).map(([leagueId, members]) => [
+              leagueId,
+              members.filter((member) => member.id !== userId),
+            ]),
+          ),
+        );
+        addToast("Usuario excluido.", "success");
+        return;
+      }
+
       await deleteRemoteUser(userId, sessionToken);
       setPredictions((items) => items.filter((prediction) => prediction.userId !== userId));
       setBonusPredictions((items) => items.filter((prediction) => prediction.userId !== userId));
@@ -366,6 +496,22 @@ export function AppProvider({ children }) {
 
   async function adminDeleteLeague(leagueId) {
     try {
+      if (!isSupabaseConfigured) {
+        const remainingLeagues = leagues.filter((league) => league.id !== leagueId);
+        setLeagues(remainingLeagues);
+        setPublicLeagues((items) => items.filter((league) => league.id !== leagueId));
+        setPredictions((items) => items.filter((prediction) => prediction.leagueId !== leagueId));
+        setBonusPredictions((items) => items.filter((prediction) => prediction.leagueId !== leagueId));
+        setMembersByLeague((items) => {
+          const next = { ...items };
+          delete next[leagueId];
+          return next;
+        });
+        setActiveLeagueId((current) => (current === leagueId ? remainingLeagues[0]?.id || null : current));
+        addToast("Liga excluida.", "success");
+        return;
+      }
+
       await deleteRemoteLeague(leagueId, sessionToken);
       const remainingLeagues = leagues.filter((league) => league.id !== leagueId);
       setLeagues(remainingLeagues);
@@ -381,6 +527,88 @@ export function AppProvider({ children }) {
       addToast("Liga excluida.", "success");
     } catch (error) {
       addToast(error.message || "Nao foi possivel excluir a liga", "error");
+      throw error;
+    }
+  }
+
+  async function adminUpdateLeague(payload) {
+    try {
+      if (!isSupabaseConfigured) {
+        const savedLeague = {
+          ...(leagues.find((league) => league.id === payload.leagueId) || {}),
+          name: payload.name,
+          isPublic: payload.isPublic,
+        };
+        setLeagues((items) =>
+          items.map((league) =>
+            league.id === payload.leagueId ? { ...league, name: payload.name, isPublic: payload.isPublic } : league,
+          ),
+        );
+        setPublicLeagues((items) =>
+          payload.isPublic
+            ? [savedLeague, ...items.filter((league) => league.id !== payload.leagueId)]
+            : items.filter((league) => league.id !== payload.leagueId),
+        );
+        addToast("Liga atualizada.", "success");
+        return savedLeague;
+      }
+
+      const savedLeague = await updateAdminRemoteLeague(payload, sessionToken);
+      setLeagues((items) =>
+        items.map((league) =>
+          league.id === savedLeague.id
+            ? { ...league, name: savedLeague.name, isPublic: savedLeague.isPublic }
+            : league,
+        ),
+      );
+      setPublicLeagues((items) =>
+        savedLeague.isPublic
+          ? [savedLeague, ...items.filter((league) => league.id !== savedLeague.id)]
+          : items.filter((league) => league.id !== savedLeague.id),
+      );
+      await refreshAdminState();
+      addToast("Liga atualizada.", "success");
+      return savedLeague;
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel atualizar a liga", "error");
+      throw error;
+    }
+  }
+
+  async function adminUpsertPlayer(payload) {
+    try {
+      if (!isSupabaseConfigured) {
+        const username = payload.username.trim().toLowerCase();
+        const savedPlayer = {
+          id: `local-${username.replace(/[^a-z0-9]/g, "-")}`,
+          username,
+          name: payload.name.trim(),
+          avatar: avatarFor(payload.name),
+          role: payload.role || "player",
+          isAdmin: payload.role === "admin",
+          displayNameSet: true,
+        };
+
+        setMembersByLeague((items) =>
+          Object.fromEntries(
+            Object.entries(items).map(([leagueId, members]) => [
+              leagueId,
+              members.map((member) =>
+                member.username === username || member.id === savedPlayer.id ? { ...member, ...savedPlayer } : member,
+              ),
+            ]),
+          ),
+        );
+        addToast("Usuario atualizado no modo local.", "success");
+        return savedPlayer;
+      }
+
+      const savedPlayer = await upsertAdminRemotePlayer(payload, sessionToken);
+      await refreshAdminState();
+      addToast("Usuario salvo.", "success");
+      return savedPlayer;
+    } catch (error) {
+      addToast(error.message || "Nao foi possivel salvar o usuario", "error");
       throw error;
     }
   }
@@ -449,7 +677,7 @@ export function AppProvider({ children }) {
     users,
     ranking,
     profileRank,
-    adminState,
+    adminState: displayedAdminState,
     sessionToken,
     recoveryCode,
     clearRecoveryCode,
@@ -470,6 +698,8 @@ export function AppProvider({ children }) {
     refreshAdminState,
     adminUpdateFixtureResult,
     adminCreateLeague,
+    adminUpdateLeague,
+    adminUpsertPlayer,
     adminDeleteUser,
     adminDeleteLeague,
     handleLogout,
