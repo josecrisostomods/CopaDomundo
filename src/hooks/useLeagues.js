@@ -35,7 +35,7 @@ function localLeagueFor(currentUser, overrides = {}) {
       exactScore: 5,
       qualifier: 2,
       qualificationMethod: 2,
-      scoreFromFixtureIndex: 3,
+      scoreFromFixtureIndex: 2,
       leagueScopedOnly: false,
       bonusLocked: false,
       ...(overrides.settings || {}),

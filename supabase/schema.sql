@@ -150,12 +150,12 @@ create table if not exists public.league_settings (
   points_exact_score int not null default 5,
   points_qualifier int not null default 2,
   points_qualification_method int not null default 2,
-  score_from_fixture_index int not null default 3,
+  score_from_fixture_index int not null default 2,
   league_scoped_only boolean not null default false,
   updated_at timestamptz not null default now()
 );
 
-alter table public.league_settings add column if not exists score_from_fixture_index int not null default 3;
+alter table public.league_settings add column if not exists score_from_fixture_index int not null default 2;
 alter table public.league_settings add column if not exists league_scoped_only boolean not null default false;
 
 -- Migrar ligas existentes para o novo padrão de pontuação
@@ -652,7 +652,7 @@ begin
       'exactScore', coalesce(league_data.points_exact_score, 5),
       'qualifier', coalesce(league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(league_data.points_qualification_method, 2),
-      'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 3),
+      'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 2),
       'leagueScopedOnly', coalesce(league_data.league_scoped_only, false)
     ),
     'created_at', league_data.created_at
@@ -1233,7 +1233,7 @@ begin
       'exactScore', coalesce(league_data.points_exact_score, 5),
       'qualifier', coalesce(league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(league_data.points_qualification_method, 2),
-      'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 3),
+      'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 2),
       'leagueScopedOnly', coalesce(league_data.league_scoped_only, false)
     )
   ) order by league_data.created_at desc), '[]'::jsonb)
@@ -1273,7 +1273,7 @@ begin
       'exactScore', coalesce(public_league_data.points_exact_score, 5),
       'qualifier', coalesce(public_league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(public_league_data.points_qualification_method, 2),
-      'scoreFromFixtureIndex', coalesce(public_league_data.score_from_fixture_index, 3),
+      'scoreFromFixtureIndex', coalesce(public_league_data.score_from_fixture_index, 2),
       'leagueScopedOnly', coalesce(public_league_data.league_scoped_only, false)
     )
   ) order by public_league_data.member_count desc, public_league_data.created_at desc), '[]'::jsonb)
@@ -2013,6 +2013,10 @@ notify pgrst, 'reload schema';
 -- 1. Garante que as configurações de pontos fiquem 2 e 5
 update public.league_settings 
 set points_outcome = 2, points_exact_score = 5;
+
+-- 1.1. Contar ranking a partir do 3o jogo: pula somente os 2 primeiros jogos.
+update public.league_settings
+set score_from_fixture_index = 2;
 
 -- 2. Atualiza o resultado do Mexico x África do Sul no banco de dados
 update public.fixtures 

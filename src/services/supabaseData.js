@@ -21,7 +21,7 @@ function mapLeague(row, meta = {}) {
       exactScore: settings.exactScore ?? 5,
       qualifier: settings.qualifier ?? 2,
       qualificationMethod: settings.qualificationMethod ?? 2,
-      scoreFromFixtureIndex: settings.scoreFromFixtureIndex ?? 3,
+      scoreFromFixtureIndex: settings.scoreFromFixtureIndex ?? 2,
       leagueScopedOnly: Boolean(settings.leagueScopedOnly),
     },
   };
