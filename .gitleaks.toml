@@ -1,0 +1,4 @@
+title = "CopaDomundo secret scanning"
+
+[extend]
+useDefault = true

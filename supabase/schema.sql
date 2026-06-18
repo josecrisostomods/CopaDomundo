@@ -27,15 +27,8 @@ where username is null;
 alter table public.profiles alter column username set not null;
 create unique index if not exists profiles_username_unique on public.profiles (username);
 
-insert into public.profiles (username, password_hash, recovery_code_hash, name, avatar, display_name_set, role)
-values ('jardel', crypt('212220', gen_salt('bf')), null, 'Jardel', 'JA', true, 'admin')
-on conflict (username) do update
-set
-  password_hash = excluded.password_hash,
-  role = 'admin',
-  name = coalesce(nullif(public.profiles.name, ''), 'Jardel'),
-  avatar = coalesce(nullif(public.profiles.avatar, ''), 'JA'),
-  display_name_set = true;
+-- Promova administradores manualmente depois do cadastro.
+-- Nunca mantenha senhas administrativas no codigo ou nas migrations.
 
 create table if not exists public.player_sessions (
   token text primary key,

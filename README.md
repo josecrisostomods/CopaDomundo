@@ -114,16 +114,17 @@ Para ativar:
 4. Configure `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` na Vercel para permitir que a funcao da API grave jogos.
 5. Configure as mesmas variaveis na Vercel.
 
-### Acesso admin inicial
+### Acesso admin
 
-Ao rodar `supabase/schema.sql`, o banco cria ou atualiza o usuario admin:
+O projeto nao cria credenciais administrativas fixas. Cadastre uma conta normalmente e promova somente o usuario escolhido no SQL Editor do Supabase:
 
-```text
-usuario: jardel
-senha: 212220
+```sql
+update public.profiles
+set role = 'admin'
+where username = 'SEU_USUARIO';
 ```
 
-Esse usuario aparece com a aba **Admin** no menu. As acoes administrativas passam por RPC com validacao de sessao e papel `admin`; as tabelas sensiveis seguem bloqueadas para acesso direto pelo cliente.
+Nunca grave senhas no repositorio, em migrations ou na documentacao. As acoes administrativas passam por RPC com validacao de sessao e papel `admin`; as tabelas sensiveis seguem bloqueadas para acesso direto pelo cliente.
 
 ## Deploy na Vercel
 
