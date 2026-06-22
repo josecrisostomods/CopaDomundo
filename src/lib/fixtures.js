@@ -7,15 +7,19 @@ function normalizeName(value) {
 }
 
 function sameFixtureByTeamsAndDay(left, right) {
-  const leftDate = String(left.kickoff || "").slice(0, 10);
-  const rightDate = String(right.kickoff || "").slice(0, 10);
-
-  if (!leftDate || leftDate !== rightDate) return false;
-
-  return (
+  const sameTeams = (
     normalizeName(left.home?.name) === normalizeName(right.home?.name) &&
     normalizeName(left.away?.name) === normalizeName(right.away?.name)
   );
+
+  if (!sameTeams) return false;
+
+  const leftTime = new Date(left.kickoff).getTime();
+  const rightTime = new Date(right.kickoff).getTime();
+  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) return false;
+
+  // Provedores retornam UTC, enquanto o fallback guarda o fuso do estadio.
+  return Math.abs(leftTime - rightTime) <= 36 * 60 * 60 * 1000;
 }
 
 function mapWinnerToExistingIds(existing, incoming) {

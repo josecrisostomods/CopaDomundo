@@ -194,14 +194,7 @@ export function AppProvider({ children }) {
           remote.leagues.some((league) => league.id === current) ? current : remote.leagues[0]?.id || null,
         );
 
-        // Só substituir fixtures locais se o banco remoto tiver um conjunto
-        // razoavelmente completo (pelo menos 48, metade da fase de grupos).
-        // Isso evita que um retorno parcial (ex.: 2 jogos) apague o calendário
-        // mock completo do usuário.
-        const MIN_REMOTE_FIXTURES = 48;
-        if (remote.fixtures.length >= MIN_REMOTE_FIXTURES) {
-          setFixtures(remote.fixtures);
-        } else if (remote.fixtures.length > 0) {
+        if (remote.fixtures.length > 0) {
           setFixtures((current) => mergeFixtureLists(current, remote.fixtures));
         }
         setPredictions(remote.predictions);

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { MOCK_FIXTURES } from "../src/data/mockWorldCup.js";
 
 const FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4";
 const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
@@ -426,8 +427,12 @@ export default async function handler(request, response) {
       return;
     }
 
-    response.status(result.status).json({
-      ...result.body,
+    response.status(200).json({
+      provider: "calendario-local",
+      syncedAt: new Date().toISOString(),
+      fallback: true,
+      fixtures: MOCK_FIXTURES,
+      warning: result.body?.error || "Os provedores externos nao retornaram jogos.",
       fallbackAttempted: fallbackProvider,
       fallbackError: fallback.body?.error || null,
     });

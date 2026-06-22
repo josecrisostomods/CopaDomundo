@@ -80,7 +80,8 @@ O site atualiza partidas e placares de duas formas:
 1. **Enquanto alguem esta usando o site**
    - O frontend chama `/api/sync-fixtures` ao entrar.
    - Depois repete a chamada a cada 2 minutos.
-   - Quando a API ou o Supabase retornam poucos jogos, o app mescla esses resultados com o calendario local em vez de apagar a lista completa.
+   - Quando a API ou o Supabase retornam menos de 104 jogos, o app mescla esses resultados com o calendario local em vez de apagar partidas.
+   - Sem chaves externas, a rota usa o calendario local completo como fallback; placares automaticos ainda exigem um provedor configurado.
    - Ao voltar para a aba do navegador, ele tenta atualizar de novo.
 
 2. **Sozinho na Vercel**

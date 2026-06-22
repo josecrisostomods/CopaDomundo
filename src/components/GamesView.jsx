@@ -27,7 +27,7 @@ export function GamesView({ fixtures, predictions, onSavePrediction, loading, se
       <ScreenHeading
         icon={CalendarDays}
         title="Jogos da Copa"
-        subtitle="Palpite antes de a bola rolar. No mata-mata, escolha tambem quem passa e como passa."
+        subtitle={`${fixtures.length} jogos no calendario. No mata-mata, escolha tambem quem passa e como passa.`}
       />
 
       <div className="toolbar">

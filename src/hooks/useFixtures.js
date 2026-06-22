@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { STORAGE, FIXTURE_DATA_VERSION } from "../config/appConfig";
+import { STORAGE, FIXTURE_DATA_VERSION, WORLD_CUP_FIXTURE_COUNT } from "../config/appConfig";
 import { readStorage, writeStorage } from "../lib/storage";
 import { MOCK_FIXTURES } from "../data/mockWorldCup";
 import { mergeFixtureLists } from "../lib/fixtures";
-import { isFixtureClosed } from "../lib/scoring";
 import { syncFixtures } from "../services/fixtureApi";
 
 function getInitialFixtures() {
@@ -13,11 +12,7 @@ function getInitialFixtures() {
   const storedFixtures = readStorage(STORAGE.fixtures, null);
   if (!Array.isArray(storedFixtures) || !storedFixtures.length) return MOCK_FIXTURES;
 
-  const hasOpenScheduledGame = storedFixtures.some(
-    (fixture) => fixture.status === "SCHEDULED" && !isFixtureClosed(fixture),
-  );
-
-  return hasOpenScheduledGame ? storedFixtures : MOCK_FIXTURES;
+  return mergeFixtureLists(MOCK_FIXTURES, storedFixtures);
 }
 
 export function useFixtures() {
@@ -48,18 +43,29 @@ export function useFixtures() {
         return null;
       }
 
-      // Só substituir se o payload tiver um conjunto razoavelmente completo
-      // (pelo menos 48 jogos). Evita que uma resposta parcial da API apague
-      // o calendário local completo.
-      const MIN_SYNC_FIXTURES = 48;
-      if (payload.fixtures.length < MIN_SYNC_FIXTURES) {
-        setFixtures((current) => mergeFixtureLists(current, payload.fixtures));
+      if (payload.fallback) {
+        setFixtures((current) => mergeFixtureLists(payload.fixtures, current));
         const syncedAt = payload.syncedAt || new Date().toISOString();
         setLastSync(syncedAt);
         if (!silent) {
           setSyncState({
             loading: false,
-            message: `${payload.fixtures.length} jogo(s) atualizado(s). Calendario local completo mantido.`,
+            message: `Calendario completo com ${WORLD_CUP_FIXTURE_COUNT} jogos. Configure a API para atualizar placares.`,
+          });
+        }
+        return payload.fixtures;
+      }
+
+      if (payload.fixtures.length < WORLD_CUP_FIXTURE_COUNT) {
+        setFixtures((current) =>
+          mergeFixtureLists(mergeFixtureLists(MOCK_FIXTURES, current), payload.fixtures),
+        );
+        const syncedAt = payload.syncedAt || new Date().toISOString();
+        setLastSync(syncedAt);
+        if (!silent) {
+          setSyncState({
+            loading: false,
+            message: `${payload.fixtures.length} jogo(s) atualizado(s). Os ${WORLD_CUP_FIXTURE_COUNT} jogos foram mantidos.`,
           });
         }
         return payload.fixtures;
