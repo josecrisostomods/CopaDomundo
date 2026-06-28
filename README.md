@@ -10,6 +10,8 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 - Codigo de validacao unico para recuperar acesso caso o usuario esqueca usuario ou senha.
 - Ligas privadas com codigo de convite e ligas publicas abertas para qualquer usuario entrar.
 - Calendario com 104 jogos salvos no app para garantir navegacao mesmo antes da API responder.
+- Resultados completos da fase de grupos e confrontos confirmados dos 16 avos de final.
+- Chave oficial do mata-mata: ao registrar quem passou, a selecao entra automaticamente na fase seguinte.
 - Palpite de fase de grupos: vencedor, empate e placar exato.
 - Palpite de mata-mata: vencedor ou empate nos 90 minutos, quem passa e se passa no tempo normal, prorrogacao ou penaltis.
 - Palpites salvos por usuario: o mesmo palpite vale em todas as ligas onde a pessoa participa.
@@ -81,13 +83,13 @@ O site atualiza partidas e placares de duas formas:
    - O frontend chama `/api/sync-fixtures` ao entrar.
    - Depois repete a chamada a cada 2 minutos.
    - Quando a API ou o Supabase retornam menos de 104 jogos, o app mescla esses resultados com o calendario local em vez de apagar partidas.
-   - Sem chaves externas, a rota usa o calendario local completo como fallback; placares automaticos ainda exigem um provedor configurado.
+   - Sem chaves externas, a rota usa o calendario local completo e grava no Supabase os resultados ja confirmados.
    - Ao voltar para a aba do navegador, ele tenta atualizar de novo.
 
 2. **Sozinho na Vercel**
    - O `vercel.json` tem um cron em `/api/sync-fixtures`.
    - No plano Hobby da Vercel, a chamada roda uma vez por dia.
-   - Enquanto alguem estiver usando o site, o frontend ainda tenta atualizar a cada 5 minutos.
+   - Enquanto alguem estiver usando o site, o frontend ainda tenta atualizar a cada 2 minutos.
    - Com `API_FOOTBALL_KEY` e `SUPABASE_SERVICE_ROLE_KEY`, os placares novos ficam salvos no Supabase.
 
 No desenvolvimento local com `npm run dev`, a rota serverless da Vercel pode nao estar ativa. Nesse caso, a atualizacao automatica real acontece depois do deploy na Vercel ou usando `vercel dev`.
@@ -115,6 +117,8 @@ Para ativar:
 4. Configure `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` na Vercel para permitir que a funcao da API grave jogos.
 5. Configure as mesmas variaveis na Vercel.
 
+Para atualizar um banco que ja existe, execute tambem `supabase/2026-06-28-resultados-mata-mata.sql`. Esse arquivo encerra os palpites bonus no servidor e ativa a progressao automatica do mata-mata.
+
 ### Acesso admin
 
 O projeto nao cria credenciais administrativas fixas. Cadastre uma conta normalmente e promova somente o usuario escolhido no SQL Editor do Supabase:
@@ -138,7 +142,7 @@ O `vercel.json` ja esta configurado:
   "crons": [
     {
       "path": "/api/sync-fixtures",
-      "schedule": "0 12 * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
@@ -176,12 +180,14 @@ src/App.jsx                Telas e fluxo do produto
 src/components/AdminView.jsx Painel administrativo
 src/config/appConfig.js    Configuracoes de navegacao e armazenamento local
 src/data/mockWorldCup.js   Calendario local com jogos da Copa
+src/data/worldCupBracket.js Chave oficial e ordem de progressao do mata-mata
 src/lib/scoring.js         Regras de pontuacao e ranking
 src/lib/supabase.js        Cliente Supabase opcional
 src/lib/validators.js      Validacoes compartilhadas de formulario
 src/styles.css             Visual mobile-first
 src/utils/formatters.js    Formatadores de datas, horarios e rotulos
 supabase/schema.sql        Banco de dados
+supabase/2026-06-28-resultados-mata-mata.sql Atualizacao para bancos existentes
 tests/validators.test.js   Testes dos validadores principais
 ```
 

@@ -145,11 +145,13 @@ create table if not exists public.league_settings (
   points_qualification_method int not null default 2,
   score_from_fixture_index int not null default 2,
   league_scoped_only boolean not null default false,
+  bonus_locked boolean not null default true,
   updated_at timestamptz not null default now()
 );
 
 alter table public.league_settings add column if not exists score_from_fixture_index int not null default 2;
 alter table public.league_settings add column if not exists league_scoped_only boolean not null default false;
+alter table public.league_settings add column if not exists bonus_locked boolean not null default true;
 
 -- Migrar ligas existentes para o novo padrão de pontuação
 update public.league_settings
@@ -646,7 +648,8 @@ begin
       'qualifier', coalesce(league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(league_data.points_qualification_method, 2),
       'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 2),
-      'leagueScopedOnly', coalesce(league_data.league_scoped_only, false)
+      'leagueScopedOnly', coalesce(league_data.league_scoped_only, false),
+      'bonusLocked', coalesce(league_data.bonus_locked, true)
     ),
     'created_at', league_data.created_at
   ) order by league_data.created_at desc), '[]'::jsonb)
@@ -661,6 +664,7 @@ begin
       ls.points_qualification_method,
       ls.score_from_fixture_index,
       ls.league_scoped_only,
+      ls.bonus_locked,
       (select count(*)::int from public.league_members lm where lm.league_id = l.id) as member_count,
       (
         select count(*)::int
@@ -854,6 +858,119 @@ begin
 end;
 $$;
 
+create or replace function public.apply_knockout_advancement(
+  p_fixture_id text,
+  p_winner_team_id text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  source_fixture public.fixtures;
+  loser_team_id text;
+  target_fixture_id text;
+  target_side text;
+  second_target_fixture_id text;
+  second_target_side text;
+  second_target_team_id text;
+begin
+  select *
+  into source_fixture
+  from public.fixtures
+  where id = p_fixture_id
+  limit 1;
+
+  if source_fixture.id is null or source_fixture.stage_type <> 'KNOCKOUT' then
+    return;
+  end if;
+
+  if p_winner_team_id not in (source_fixture.home_team_id, source_fixture.away_team_id) then
+    raise exception 'Vencedor invalido para este jogo';
+  end if;
+
+  loser_team_id := case
+    when p_winner_team_id = source_fixture.home_team_id then source_fixture.away_team_id
+    else source_fixture.home_team_id
+  end;
+
+  case p_fixture_id
+    when 'r32-1' then target_fixture_id := 'r16-2'; target_side := 'home';
+    when 'r32-2' then target_fixture_id := 'r16-3'; target_side := 'home';
+    when 'r32-3' then target_fixture_id := 'r16-1'; target_side := 'home';
+    when 'r32-4' then target_fixture_id := 'r16-2'; target_side := 'away';
+    when 'r32-5' then target_fixture_id := 'r16-3'; target_side := 'away';
+    when 'r32-6' then target_fixture_id := 'r16-1'; target_side := 'away';
+    when 'r32-7' then target_fixture_id := 'r16-4'; target_side := 'home';
+    when 'r32-8' then target_fixture_id := 'r16-4'; target_side := 'away';
+    when 'r32-9' then target_fixture_id := 'r16-6'; target_side := 'away';
+    when 'r32-10' then target_fixture_id := 'r16-6'; target_side := 'home';
+    when 'r32-11' then target_fixture_id := 'r16-5'; target_side := 'away';
+    when 'r32-12' then target_fixture_id := 'r16-5'; target_side := 'home';
+    when 'r32-13' then target_fixture_id := 'r16-8'; target_side := 'home';
+    when 'r32-14' then target_fixture_id := 'r16-7'; target_side := 'away';
+    when 'r32-15' then target_fixture_id := 'r16-7'; target_side := 'home';
+    when 'r32-16' then target_fixture_id := 'r16-8'; target_side := 'away';
+    when 'r16-1' then target_fixture_id := 'qf-1'; target_side := 'home';
+    when 'r16-2' then target_fixture_id := 'qf-1'; target_side := 'away';
+    when 'r16-3' then target_fixture_id := 'qf-3'; target_side := 'home';
+    when 'r16-4' then target_fixture_id := 'qf-3'; target_side := 'away';
+    when 'r16-5' then target_fixture_id := 'qf-2'; target_side := 'home';
+    when 'r16-6' then target_fixture_id := 'qf-2'; target_side := 'away';
+    when 'r16-7' then target_fixture_id := 'qf-4'; target_side := 'home';
+    when 'r16-8' then target_fixture_id := 'qf-4'; target_side := 'away';
+    when 'qf-1' then target_fixture_id := 'sf-1'; target_side := 'home';
+    when 'qf-2' then target_fixture_id := 'sf-1'; target_side := 'away';
+    when 'qf-3' then target_fixture_id := 'sf-2'; target_side := 'home';
+    when 'qf-4' then target_fixture_id := 'sf-2'; target_side := 'away';
+    when 'sf-1' then
+      target_fixture_id := 'final-1'; target_side := 'home';
+      second_target_fixture_id := 'third-1'; second_target_side := 'home'; second_target_team_id := loser_team_id;
+    when 'sf-2' then
+      target_fixture_id := 'final-1'; target_side := 'away';
+      second_target_fixture_id := 'third-1'; second_target_side := 'away'; second_target_team_id := loser_team_id;
+    else return;
+  end case;
+
+  if exists (
+    select 1 from public.fixtures f
+    where f.id = target_fixture_id
+      and f.status <> 'SCHEDULED'
+      and case when target_side = 'home' then f.home_team_id else f.away_team_id end <> p_winner_team_id
+  ) then
+    raise exception 'A proxima fase ja comecou e nao pode receber outro classificado';
+  end if;
+
+  update public.fixtures
+  set
+    home_team_id = case when target_side = 'home' then p_winner_team_id else home_team_id end,
+    away_team_id = case when target_side = 'away' then p_winner_team_id else away_team_id end,
+    updated_at = now()
+  where id = target_fixture_id
+    and status = 'SCHEDULED';
+
+  if second_target_fixture_id is not null then
+    if exists (
+      select 1 from public.fixtures f
+      where f.id = second_target_fixture_id
+        and f.status <> 'SCHEDULED'
+        and case when second_target_side = 'home' then f.home_team_id else f.away_team_id end <> second_target_team_id
+    ) then
+      raise exception 'A disputa de terceiro ja comecou e nao pode receber outro participante';
+    end if;
+
+    update public.fixtures
+    set
+      home_team_id = case when second_target_side = 'home' then second_target_team_id else home_team_id end,
+      away_team_id = case when second_target_side = 'away' then second_target_team_id else away_team_id end,
+      updated_at = now()
+    where id = second_target_fixture_id
+      and status = 'SCHEDULED';
+  end if;
+end;
+$$;
+
 create or replace function public.admin_update_fixture_result(
   session_token text,
   p_fixture_id text,
@@ -936,6 +1053,13 @@ begin
     updated_at = now()
   where id = target_fixture.id
   returning * into saved_fixture;
+
+  if target_fixture.stage_type = 'KNOCKOUT'
+    and next_status = 'FINISHED'
+    and next_winner is not null
+  then
+    perform public.apply_knockout_advancement(target_fixture.id, next_winner);
+  end if;
 
   return saved_fixture;
 end;
@@ -1227,7 +1351,8 @@ begin
       'qualifier', coalesce(league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(league_data.points_qualification_method, 2),
       'scoreFromFixtureIndex', coalesce(league_data.score_from_fixture_index, 2),
-      'leagueScopedOnly', coalesce(league_data.league_scoped_only, false)
+      'leagueScopedOnly', coalesce(league_data.league_scoped_only, false),
+      'bonusLocked', coalesce(league_data.bonus_locked, true)
     )
   ) order by league_data.created_at desc), '[]'::jsonb)
   into leagues_json
@@ -1246,6 +1371,7 @@ begin
       ls.points_qualification_method,
       ls.score_from_fixture_index,
       ls.league_scoped_only,
+      ls.bonus_locked,
       (select count(*)::int from public.league_members count_lm where count_lm.league_id = l.id) as member_count
     from public.league_members lm
     join public.leagues l on l.id = lm.league_id
@@ -1267,7 +1393,8 @@ begin
       'qualifier', coalesce(public_league_data.points_qualifier, 2),
       'qualificationMethod', coalesce(public_league_data.points_qualification_method, 2),
       'scoreFromFixtureIndex', coalesce(public_league_data.score_from_fixture_index, 2),
-      'leagueScopedOnly', coalesce(public_league_data.league_scoped_only, false)
+      'leagueScopedOnly', coalesce(public_league_data.league_scoped_only, false),
+      'bonusLocked', coalesce(public_league_data.bonus_locked, true)
     )
   ) order by public_league_data.member_count desc, public_league_data.created_at desc), '[]'::jsonb)
   into public_leagues_json
@@ -1283,6 +1410,7 @@ begin
       ls.points_qualification_method,
       ls.score_from_fixture_index,
       ls.league_scoped_only,
+      ls.bonus_locked,
       (select count(*)::int from public.league_members count_lm where count_lm.league_id = l.id) as member_count
     from public.leagues l
     left join public.league_settings ls on ls.league_id = l.id
@@ -1805,6 +1933,8 @@ begin
     from public.fixtures f
     where f.id = p_fixture_id
     and f.status = 'SCHEDULED'
+    and f.home_team_id not like 'slot-%'
+    and f.away_team_id not like 'slot-%'
     -- Relaxamos a verificacao de relogio estrita para evitar problemas de fuso
     -- Se o status na API ainda e SCHEDULED, o jogo nao comecou
   ) then
@@ -1905,6 +2035,31 @@ begin
 end;
 $$;
 
+create or replace function public.reject_unready_fixture_prediction()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if exists (
+    select 1
+    from public.fixtures f
+    where f.id = new.fixture_id
+      and (f.home_team_id like 'slot-%' or f.away_team_id like 'slot-%')
+  ) then
+    raise exception 'Aguardando os classificados deste confronto';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists predictions_require_defined_teams on public.predictions;
+create trigger predictions_require_defined_teams
+before insert or update on public.predictions
+for each row execute function public.reject_unready_fixture_prediction();
+
 create or replace function public.save_bonus_prediction(
   session_token text,
   p_league_id uuid,
@@ -1930,6 +2085,14 @@ begin
     and lm.user_id = current_player_id
   ) then
     raise exception 'Voce nao participa dessa liga';
+  end if;
+
+  if coalesce((
+    select ls.bonus_locked
+    from public.league_settings ls
+    where ls.league_id = p_league_id
+  ), true) then
+    raise exception 'Palpites bonus encerrados';
   end if;
 
   insert into public.user_bonus_predictions (
@@ -1987,6 +2150,8 @@ revoke execute on function public.create_player_session(uuid) from public, anon,
 revoke execute on function public.player_id_from_session(text) from public, anon, authenticated;
 revoke execute on function public.generate_recovery_code() from public, anon, authenticated;
 revoke execute on function public.admin_player_id_from_session(text) from public, anon, authenticated;
+revoke execute on function public.apply_knockout_advancement(text, text) from public, anon, authenticated;
+revoke execute on function public.reject_unready_fixture_prediction() from public, anon, authenticated;
 
 revoke all on table public.profiles from anon, authenticated;
 revoke all on table public.player_sessions from anon, authenticated;
@@ -2010,6 +2175,10 @@ set points_outcome = 2, points_exact_score = 5;
 -- 1.1. Contar ranking a partir do 3o jogo: pula somente os 2 primeiros jogos.
 update public.league_settings
 set score_from_fixture_index = 2;
+
+-- 1.2. Os palpites bonus foram encerrados antes do mata-mata.
+update public.league_settings
+set bonus_locked = true;
 
 -- 2. Atualiza o resultado do Mexico x África do Sul no banco de dados
 update public.fixtures 

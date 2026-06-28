@@ -1,3 +1,5 @@
+import { KNOCKOUT_ADVANCEMENT } from "../data/worldCupBracket.js";
+
 function normalizeName(value) {
   return String(value || "")
     .normalize("NFD")
@@ -30,7 +32,11 @@ function mapWinnerToExistingIds(existing, incoming) {
 }
 
 function mergeFixture(existing, incoming, keepExistingId = false) {
-  return {
+  const existingFinished = existing.status === "FINISHED";
+  const incomingFinished = incoming.status === "FINISHED";
+  const preferredResult = existingFinished && !incomingFinished ? existing : incoming;
+
+  const merged = {
     ...existing,
     ...incoming,
     id: keepExistingId ? existing.id : incoming.id,
@@ -46,6 +52,18 @@ function mergeFixture(existing, incoming, keepExistingId = false) {
     },
     winner: keepExistingId ? mapWinnerToExistingIds(existing, incoming) : incoming.winner,
   };
+
+  if (existingFinished !== incomingFinished) {
+    merged.status = "FINISHED";
+    merged.homeScore = preferredResult.homeScore;
+    merged.awayScore = preferredResult.awayScore;
+    merged.winner = keepExistingId && preferredResult === incoming
+      ? mapWinnerToExistingIds(existing, incoming)
+      : preferredResult.winner;
+    merged.classificationMethod = preferredResult.classificationMethod;
+  }
+
+  return merged;
 }
 
 export function mergeFixtureLists(currentFixtures, incomingFixtures) {
@@ -70,4 +88,26 @@ export function mergeFixtureLists(currentFixtures, incomingFixtures) {
   }
 
   return merged.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
+}
+
+export function applyKnockoutProgression(fixtures, sourceFixtureId, winnerTeamId) {
+  const assignments = KNOCKOUT_ADVANCEMENT[sourceFixtureId];
+  if (!assignments?.length || !winnerTeamId) return fixtures;
+
+  const source = fixtures.find((fixture) => fixture.id === sourceFixtureId);
+  if (!source) return fixtures;
+
+  const winner = [source.home, source.away].find((team) => team.id === winnerTeamId);
+  const loser = [source.home, source.away].find((team) => team.id !== winnerTeamId);
+  if (!winner || !loser) return fixtures;
+
+  return fixtures.map((fixture) => {
+    const fixtureAssignments = assignments.filter((assignment) => assignment.targetId === fixture.id);
+    if (!fixtureAssignments.length) return fixture;
+
+    return fixtureAssignments.reduce((updated, assignment) => ({
+      ...updated,
+      [assignment.side]: assignment.outcome === "loser" ? loser : winner,
+    }), fixture);
+  });
 }

@@ -52,14 +52,17 @@ export function FixtureSkeleton() {
 export function FixtureCard({ fixture, prediction, onSavePrediction, settings }) {
   const [expanded, setExpanded] = useState(false);
   const [formError, setFormError] = useState("");
-  const closed = isFixtureClosed(fixture);
+  const awaitingTeams = [fixture.home?.id, fixture.away?.id].some((id) => String(id || "").startsWith("slot-"));
+  const closed = awaitingTeams || isFixtureClosed(fixture);
   const result = scorePrediction(fixture, prediction, settings || DEFAULT_SCORING);
   const countdown = useCountdown(fixture.kickoff);
 
   return (
     <article className="fixture-card">
       <div className="fixture-meta">
-        <span className={`status status-${fixture.status.toLowerCase()}`}>{statusLabel(fixture.status)}</span>
+        <span className={`status status-${fixture.status.toLowerCase()}`}>
+          {awaitingTeams ? "Aguardando classificados" : statusLabel(fixture.status)}
+        </span>
         <span>{fixture.group ? `Grupo ${fixture.group}` : fixture.phase}</span>
         <span>{formatDate(fixture.kickoff)}</span>
       </div>
@@ -109,7 +112,13 @@ export function FixtureCard({ fixture, prediction, onSavePrediction, settings })
       >
         {closed ? <Lock size={17} /> : <Edit3 size={17} />}
         <span style={{ flex: 1, textAlign: "center" }}>
-          {expanded ? "Fechar" : prediction ? "Editar palpite" : "Fazer palpite"}
+          {expanded
+            ? "Fechar"
+            : awaitingTeams
+              ? "Aguardando classificados"
+              : prediction
+                ? "Editar palpite"
+                : "Fazer palpite"}
         </span>
         {!closed && !expanded && countdown && <span className="countdown-pill">{countdown}</span>}
       </button>

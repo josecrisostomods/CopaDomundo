@@ -1,3 +1,5 @@
+import { KNOCKOUT_FIXTURE_DEFINITIONS } from "./worldCupBracket.js";
+
 const flagMap = {
   Argentina: "AR",
   Australia: "AU",
@@ -100,18 +102,81 @@ const imageCodeMap = {
   Uzbequistao: "uz",
 };
 
+// Resultados da fase de grupos conferidos em 28/06/2026.
 const confirmedResults = {
   "Mexico|Africa do Sul": [2, 0],
   "Coreia do Sul|Tchequia": [2, 1],
   "Canada|Bosnia": [1, 1],
+  "Estados Unidos|Paraguai": [4, 1],
+  "Catar|Suica": [1, 1],
+  "Brasil|Marrocos": [1, 1],
+  "Haiti|Escocia": [0, 1],
+  "Australia|Turquia": [2, 0],
+  "Alemanha|Curacao": [7, 1],
+  "Paises Baixos|Japao": [2, 2],
+  "Costa do Marfim|Equador": [1, 0],
+  "Suecia|Tunisia": [5, 1],
+  "Espanha|Cabo Verde": [0, 0],
+  "Belgica|Egito": [1, 1],
+  "Arabia Saudita|Uruguai": [1, 1],
+  "Ira|Nova Zelandia": [2, 2],
+  "Franca|Senegal": [3, 1],
+  "Iraque|Noruega": [1, 4],
+  "Argentina|Argelia": [3, 0],
+  "Austria|Jordania": [3, 1],
+  "Portugal|RD Congo": [1, 1],
+  "Inglaterra|Croacia": [4, 2],
+  "Gana|Panama": [1, 0],
+  "Uzbequistao|Colombia": [1, 3],
+  "Tchequia|Africa do Sul": [1, 1],
+  "Suica|Bosnia": [4, 1],
+  "Canada|Catar": [6, 0],
+  "Mexico|Coreia do Sul": [1, 0],
+  "Estados Unidos|Australia": [2, 0],
+  "Escocia|Marrocos": [0, 1],
+  "Brasil|Haiti": [3, 0],
+  "Turquia|Paraguai": [0, 1],
+  "Paises Baixos|Suecia": [5, 1],
+  "Alemanha|Costa do Marfim": [2, 1],
+  "Equador|Curacao": [0, 0],
+  "Tunisia|Japao": [0, 4],
+  "Espanha|Arabia Saudita": [4, 0],
+  "Belgica|Ira": [0, 0],
+  "Uruguai|Cabo Verde": [2, 2],
+  "Nova Zelandia|Egito": [1, 3],
+  "Argentina|Austria": [2, 0],
+  "Franca|Iraque": [3, 0],
+  "Noruega|Senegal": [3, 2],
+  "Jordania|Argelia": [1, 2],
+  "Portugal|Uzbequistao": [5, 0],
+  "Inglaterra|Gana": [0, 0],
+  "Panama|Croacia": [0, 1],
+  "Colombia|RD Congo": [1, 0],
+  "Bosnia|Catar": [3, 1],
+  "Suica|Canada": [2, 1],
+  "Marrocos|Haiti": [4, 2],
+  "Escocia|Brasil": [0, 3],
+  "Tchequia|Mexico": [0, 3],
+  "Africa do Sul|Coreia do Sul": [1, 0],
+  "Curacao|Costa do Marfim": [0, 2],
+  "Equador|Alemanha": [2, 1],
+  "Japao|Suecia": [1, 1],
+  "Tunisia|Paises Baixos": [1, 3],
+  "Paraguai|Australia": [0, 0],
+  "Turquia|Estados Unidos": [3, 2],
+  "Noruega|Franca": [1, 4],
+  "Senegal|Iraque": [5, 0],
+  "Cabo Verde|Arabia Saudita": [0, 0],
+  "Uruguai|Espanha": [0, 1],
+  "Egito|Ira": [1, 1],
+  "Nova Zelandia|Belgica": [1, 5],
+  "Croacia|Gana": [2, 1],
+  "Panama|Inglaterra": [0, 2],
+  "Colombia|Portugal": [0, 0],
+  "RD Congo|Uzbequistao": [3, 1],
+  "Argelia|Austria": [3, 3],
+  "Jordania|Argentina": [1, 3],
 };
-
-function isoDateFrom(baseDate, dayOffset, hour = 16) {
-  const base = new Date(`${baseDate}T16:00:00-03:00`);
-  base.setDate(base.getDate() + dayOffset);
-  base.setHours(hour, 0, 0, 0);
-  return base.toISOString();
-}
 
 function team(name) {
   const imageCode = imageCodeMap[name];
@@ -236,39 +301,23 @@ function buildGroupFixtures() {
 }
 
 function buildKnockoutFixtures() {
-  const rounds = [
-    { key: "r32", label: "16 avos de final", count: 16, baseDate: "2026-06-28", days: 6 },
-    { key: "r16", label: "Oitavas de final", count: 8, baseDate: "2026-07-04", days: 4 },
-    { key: "qf", label: "Quartas de final", count: 4, baseDate: "2026-07-09", days: 3 },
-    { key: "sf", label: "Semifinal", count: 2, baseDate: "2026-07-14", days: 2 },
-    { key: "third", label: "Disputa de terceiro", count: 1, baseDate: "2026-07-18", days: 1 },
-    { key: "final", label: "Final", count: 1, baseDate: "2026-07-19", days: 1 },
-  ];
-
-  return rounds.flatMap((round) =>
-    Array.from({ length: round.count }, (_, index) => {
-      const home = team(`${round.label} ${index + 1} - Time A`);
-      const away = team(`${round.label} ${index + 1} - Time B`);
-      const dayOffset = Math.floor((index * round.days) / round.count);
-      return {
-        id: `${round.key}-${index + 1}`,
-        apiId: null,
-        group: null,
-        round: index + 1,
-        phase: round.label,
-        stageType: "KNOCKOUT",
-        venue: ["New York", "Miami", "Atlanta", "Vancouver"][index % 4],
-        kickoff: isoDateFrom(round.baseDate, dayOffset, [13, 16, 19, 22][index % 4]),
-        status: "SCHEDULED",
-        home,
-        away,
-        homeScore: null,
-        awayScore: null,
-        winner: null,
-        classificationMethod: null,
-      };
-    }),
-  );
+  return KNOCKOUT_FIXTURE_DEFINITIONS.map((fixture) => ({
+    id: fixture.id,
+    apiId: String(fixture.matchNumber),
+    group: null,
+    round: String(fixture.matchNumber),
+    phase: fixture.phase,
+    stageType: "KNOCKOUT",
+    venue: fixture.venue,
+    kickoff: fixture.kickoff,
+    status: "SCHEDULED",
+    home: typeof fixture.home === "string" ? team(fixture.home) : fixture.home,
+    away: typeof fixture.away === "string" ? team(fixture.away) : fixture.away,
+    homeScore: null,
+    awayScore: null,
+    winner: null,
+    classificationMethod: null,
+  }));
 }
 
 export const MOCK_FIXTURES = [...buildGroupFixtures(), ...buildKnockoutFixtures()];

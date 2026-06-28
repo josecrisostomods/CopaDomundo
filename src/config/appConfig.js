@@ -12,7 +12,7 @@ export const STORAGE = {
   bonusPredictions: "copa-bonus-predictions",
 };
 
-export const FIXTURE_DATA_VERSION = "2026-complete-calendar-v10";
+export const FIXTURE_DATA_VERSION = "2026-results-and-bracket-v11";
 export const WORLD_CUP_FIXTURE_COUNT = 104;
 
 export const AUTO_SYNC_INTERVAL_MS = 2 * 60 * 1000;

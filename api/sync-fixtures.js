@@ -157,7 +157,40 @@ function fixtureToDbRow(fixture, provider) {
   };
 }
 
-async function persistFixtures(fixtures, provider) {
+function isBracketSlot(teamId) {
+  return String(teamId || "").startsWith("slot-");
+}
+
+function preserveStoredProgress(incoming, stored) {
+  if (!stored) return incoming;
+
+  if (stored.status !== "SCHEDULED" && incoming.status === "SCHEDULED") {
+    return {
+      ...incoming,
+      status: stored.status,
+      home_team_id: stored.home_team_id,
+      away_team_id: stored.away_team_id,
+      home_score: stored.home_score,
+      away_score: stored.away_score,
+      winner_team_id: stored.winner_team_id,
+      classification_method: stored.classification_method,
+    };
+  }
+
+  if (incoming.stage_type !== "KNOCKOUT") return incoming;
+
+  return {
+    ...incoming,
+    home_team_id: isBracketSlot(incoming.home_team_id) && !isBracketSlot(stored.home_team_id)
+      ? stored.home_team_id
+      : incoming.home_team_id,
+    away_team_id: isBracketSlot(incoming.away_team_id) && !isBracketSlot(stored.away_team_id)
+      ? stored.away_team_id
+      : incoming.away_team_id,
+  };
+}
+
+async function persistFixtures(fixtures, provider, options = {}) {
   const supabase = getServiceRoleClient();
   if (!supabase) {
     return {
@@ -192,9 +225,22 @@ async function persistFixtures(fixtures, provider) {
 
   if (teamError) throw teamError;
 
+  let fixtureRows = fixtures.map((fixture) => fixtureToDbRow(fixture, provider));
+
+  if (options.preserveStoredProgress) {
+    const { data: storedFixtures, error: storedError } = await supabase
+      .from("fixtures")
+      .select("*")
+      .in("id", fixtureRows.map((fixture) => fixture.id));
+
+    if (storedError) throw storedError;
+    const storedById = new Map((storedFixtures || []).map((fixture) => [fixture.id, fixture]));
+    fixtureRows = fixtureRows.map((fixture) => preserveStoredProgress(fixture, storedById.get(fixture.id)));
+  }
+
   const { error: fixtureError } = await supabase
     .from("fixtures")
-    .upsert(fixtures.map((fixture) => fixtureToDbRow(fixture, provider)), { onConflict: "id" });
+    .upsert(fixtureRows, { onConflict: "id" });
 
   if (fixtureError) throw fixtureError;
 
@@ -427,11 +473,24 @@ export default async function handler(request, response) {
       return;
     }
 
+    let persistence = null;
+    try {
+      persistence = await persistFixtures(MOCK_FIXTURES, "calendario-local", {
+        preserveStoredProgress: true,
+      });
+    } catch (persistenceError) {
+      persistence = {
+        persisted: false,
+        reason: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+      };
+    }
+
     response.status(200).json({
       provider: "calendario-local",
       syncedAt: new Date().toISOString(),
       fallback: true,
       fixtures: MOCK_FIXTURES,
+      persistence,
       warning: result.body?.error || "Os provedores externos nao retornaram jogos.",
       fallbackAttempted: fallbackProvider,
       fallbackError: fallback.body?.error || null,

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from "
 import { AUTO_SYNC_INTERVAL_MS } from "../config/appConfig";
 import { useToast } from "../components/Toast.jsx";
 import { isSupabaseConfigured } from "../lib/supabase";
-import { mergeFixtureLists } from "../lib/fixtures";
+import { applyKnockoutProgression, mergeFixtureLists } from "../lib/fixtures";
 import { DEFAULT_SCORING, buildRanking } from "../lib/scoring";
 import {
   createAdminRemoteLeague,
@@ -408,8 +408,8 @@ export function AppProvider({ children }) {
     try {
       const savedFixture = await updateRemoteFixtureResult(payload, sessionToken);
 
-      setFixtures((items) =>
-        items.map((fixture) =>
+      setFixtures((items) => {
+        const updatedFixtures = items.map((fixture) =>
           fixture.id === savedFixture.id
             ? {
                 ...fixture,
@@ -420,8 +420,12 @@ export function AppProvider({ children }) {
                 classificationMethod: savedFixture.classification_method,
               }
             : fixture,
-        ),
-      );
+        );
+
+        return savedFixture.status === "FINISHED" && savedFixture.winner_team_id
+          ? applyKnockoutProgression(updatedFixtures, savedFixture.id, savedFixture.winner_team_id)
+          : updatedFixtures;
+      });
       addToast("Resultado atualizado.", "success");
       return savedFixture;
     } catch (error) {

@@ -23,6 +23,7 @@ function mapLeague(row, meta = {}) {
       qualificationMethod: settings.qualificationMethod ?? 2,
       scoreFromFixtureIndex: settings.scoreFromFixtureIndex ?? 2,
       leagueScopedOnly: Boolean(settings.leagueScopedOnly),
+      bonusLocked: settings.bonusLocked ?? true,
     },
   };
 }
