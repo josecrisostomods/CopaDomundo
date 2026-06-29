@@ -175,7 +175,7 @@ test("mata-mata: placar exato + classificado + forma = 5+2+2 = 9", () => {
   assert.equal(result.details.length, 3);
 });
 
-test("mata-mata: vencedor + classificado + forma = 2+2+2 = 6", () => {
+test("mata-mata: resultado simples nao pontua, mas classificado e forma somam 4", () => {
   const fixture = finishedFixture({
     stageType: "KNOCKOUT",
     homeScore: 2,
@@ -192,10 +192,31 @@ test("mata-mata: vencedor + classificado + forma = 2+2+2 = 6", () => {
   });
   const result = scorePrediction(fixture, pred);
 
-  assert.equal(result.total, 6);
-  assert.equal(result.details.some((d) => d.label === "Vencedor/empate"), true);
+  assert.equal(result.total, 4);
+  assert.equal(result.details.some((d) => d.label === "Vencedor/empate"), false);
   assert.equal(result.details.some((d) => d.label === "Classificado"), true);
   assert.equal(result.details.some((d) => d.label === "Forma de classificacao"), true);
+});
+
+test("mata-mata: forma correta vale 2 mesmo com classificado errado", () => {
+  const fixture = finishedFixture({
+    stageType: "KNOCKOUT",
+    homeScore: 1,
+    awayScore: 1,
+    winner: "BRA",
+    classificationMethod: "PENALTIES",
+  });
+  const pred = prediction({
+    normalOutcome: "DRAW",
+    homeScore: 0,
+    awayScore: 0,
+    qualifier: "JPN",
+    qualificationMethod: "PENALTIES",
+  });
+  const result = scorePrediction(fixture, pred);
+
+  assert.equal(result.total, 2);
+  assert.deepEqual(result.details, [{ label: "Forma de classificacao", points: 2 }]);
 });
 
 test("mata-mata: so acertar classificado sem outcome = 2", () => {

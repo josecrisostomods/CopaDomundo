@@ -41,8 +41,9 @@ export function scorePrediction(fixture, prediction, scoring = DEFAULT_SCORING) 
     // Placar exato: dá o total de exactScore (5). Não soma outcome separadamente.
     total += scoring.exactScore;
     details.push({ label: "Placar exato", points: scoring.exactScore });
-  } else if (prediction.normalOutcome === actualOutcome) {
-    // Acertou vencedor/empate sem acertar o placar: dá outcome (2).
+  } else if (fixture.stageType !== "KNOCKOUT" && prediction.normalOutcome === actualOutcome) {
+    // Na fase de grupos, acertar vencedor/empate sem o placar exato vale outcome (2).
+    // No mata-mata, pontuam apenas placar exato, classificado e forma de classificacao.
     total += scoring.outcome;
     details.push({ label: OUTCOME_DETAIL_LABEL, points: scoring.outcome });
   }

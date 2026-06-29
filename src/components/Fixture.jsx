@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Edit3, Lock, ListChecks, Users, ChevronDown, ChevronUp } from "lucide-react";
-import { formatDate, methodLabel, outcomeLabel, statusLabel } from "../utils/formatters";
+import { formatDate, methodLabel, statusLabel } from "../utils/formatters";
 import { isFixtureClosed, scorePrediction, DEFAULT_SCORING } from "../lib/scoring";
 import { useApp } from "../contexts/AppContext.jsx";
 
@@ -88,10 +88,11 @@ export function FixtureCard({ fixture, prediction, onSavePrediction, settings })
             <span className="prediction-scoreline">
               {fixture.home.name} {prediction.homeScore} x {prediction.awayScore} {fixture.away.name}
             </span>
-            <small>
-              Escolha: {outcomeLabel(prediction.normalOutcome, fixture)}
-              {fixture.stageType === "KNOCKOUT" && ` · passa ${teamNameById(fixture, prediction.qualifier)} por ${methodLabel(prediction.qualificationMethod).toLowerCase()}`}
-            </small>
+            {fixture.stageType === "KNOCKOUT" && (
+              <small>
+                Passa {teamNameById(fixture, prediction.qualifier)} · {methodLabel(prediction.qualificationMethod)}
+              </small>
+            )}
           </div>
           {fixture.status === "FINISHED" && <b>{result.total} pts</b>}
         </div>
@@ -231,24 +232,6 @@ export function PredictionForm({ fixture, prediction, closed, onSubmit }) {
     penaltiesAway: prediction?.penaltiesAway ?? "",
   }));
 
-  function setOutcome(outcome) {
-    const next = { ...form, normalOutcome: outcome };
-    if (fixture.stageType === "KNOCKOUT") {
-      if (outcome === "HOME") {
-        next.qualifier = fixture.home.id;
-        next.qualificationMethod = "NORMAL_TIME";
-      }
-      if (outcome === "AWAY") {
-        next.qualifier = fixture.away.id;
-        next.qualificationMethod = "NORMAL_TIME";
-      }
-      if (outcome === "DRAW" && next.qualificationMethod === "NORMAL_TIME") {
-        next.qualificationMethod = "EXTRA_TIME";
-      }
-    }
-    setForm(next);
-  }
-
   function outcomeFromScore(homeScore, awayScore) {
     if (homeScore === "" || awayScore === "") return "";
     const home = Number(homeScore);
@@ -262,23 +245,31 @@ export function PredictionForm({ fixture, prediction, closed, onSubmit }) {
   function setScore(field, value) {
     const next = { ...form, [field]: value };
     const derivedOutcome = outcomeFromScore(next.homeScore, next.awayScore);
+    next.normalOutcome = derivedOutcome;
 
-    if (derivedOutcome) {
-      next.normalOutcome = derivedOutcome;
-
-      if (fixture.stageType === "KNOCKOUT") {
-        if (derivedOutcome === "HOME") {
-          next.qualifier = fixture.home.id;
-          next.qualificationMethod = "NORMAL_TIME";
-        }
-        if (derivedOutcome === "AWAY") {
-          next.qualifier = fixture.away.id;
-          next.qualificationMethod = "NORMAL_TIME";
-        }
-        if (derivedOutcome === "DRAW" && next.qualificationMethod === "NORMAL_TIME") {
-          next.qualificationMethod = "EXTRA_TIME";
-        }
+    if (!derivedOutcome) {
+      next.qualifier = "";
+      next.qualificationMethod = "";
+    } else if (fixture.stageType === "KNOCKOUT" && derivedOutcome === "DRAW") {
+      if (next.qualificationMethod !== "PENALTIES") {
+        next.qualifier = "";
+        next.qualificationMethod = "";
       }
+    } else if (fixture.stageType === "KNOCKOUT") {
+      next.qualifier = derivedOutcome === "HOME" ? fixture.home.id : fixture.away.id;
+      if (next.qualificationMethod === "PENALTIES") next.qualificationMethod = "";
+    }
+
+    setForm(next);
+  }
+
+  function setQualificationMethod(method) {
+    const next = { ...form, qualificationMethod: method };
+
+    if (method === "PENALTIES") {
+      next.qualifier = "";
+    } else {
+      next.qualifier = form.normalOutcome === "HOME" ? fixture.home.id : fixture.away.id;
     }
 
     setForm(next);
@@ -289,7 +280,11 @@ export function PredictionForm({ fixture, prediction, closed, onSubmit }) {
     if (!form.normalOutcome || form.homeScore === "" || form.awayScore === "") return false;
     if (fixture.stageType === "KNOCKOUT") {
       if (!form.qualifier || !form.qualificationMethod) return false;
-      if (form.normalOutcome === "DRAW" && form.qualificationMethod === "NORMAL_TIME") return false;
+      if (form.normalOutcome === "DRAW") return form.qualificationMethod === "PENALTIES";
+      if (form.qualificationMethod === "PENALTIES") return false;
+
+      const scoreWinner = form.normalOutcome === "HOME" ? fixture.home.id : fixture.away.id;
+      if (form.qualifier !== scoreWinner) return false;
     }
     return true;
   }
@@ -303,28 +298,16 @@ export function PredictionForm({ fixture, prediction, closed, onSubmit }) {
       }}
     >
       <fieldset disabled={closed}>
-        <legend>Palpite nos 90 minutos</legend>
-        <div className="choice-grid">
-          {[
-            ["HOME", fixture.home.name],
-            ["DRAW", "Empate"],
-            ["AWAY", fixture.away.name],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className={form.normalOutcome === id ? "active" : ""}
-              onClick={() => setOutcome(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <legend>{fixture.stageType === "KNOCKOUT" ? "Qual o placar oficial?" : "Qual o placar?"}</legend>
+        {fixture.stageType === "KNOCKOUT" && (
+          <p className="helper-text prediction-hint">Informe o placar sem somar a disputa de penaltis.</p>
+        )}
         <div className="score-inputs">
           <input
             type="number"
             min="0"
             max="20"
+            aria-label={`Gols de ${fixture.home.name}`}
             value={form.homeScore}
             onChange={(e) => setScore("homeScore", e.target.value)}
             placeholder="0"
@@ -334,6 +317,7 @@ export function PredictionForm({ fixture, prediction, closed, onSubmit }) {
             type="number"
             min="0"
             max="20"
+            aria-label={`Gols de ${fixture.away.name}`}
             value={form.awayScore}
             onChange={(e) => setScore("awayScore", e.target.value)}
             placeholder="0"
@@ -342,16 +326,36 @@ export function PredictionForm({ fixture, prediction, closed, onSubmit }) {
       </fieldset>
 
       {fixture.stageType === "KNOCKOUT" && form.normalOutcome && (
-        <fieldset disabled={closed}>
-          <legend>Desempate e Classificacao</legend>
-          {form.normalOutcome !== "DRAW" ? (
-            <p className="helper-text" style={{ margin: 0 }}>
-              Como escolheu vitoria no tempo normal, consideramos que{" "}
-              <strong>{teamNameById(fixture, form.qualifier)}</strong> passa sem prorrogacao ou penaltis.
-            </p>
-          ) : (
-            <>
-              <div className="choice-grid">
+        <fieldset className="knockout-box" disabled={closed}>
+          <legend>Como esse resultado aconteceu?</legend>
+          <div className="choice-grid">
+            {[
+              ["NORMAL_TIME", "Tempo normal"],
+              ["EXTRA_TIME", "Prorrogacao"],
+              ["PENALTIES", "Penaltis"],
+            ].map(([id, label]) => {
+              const unavailable = id === "PENALTIES"
+                ? form.normalOutcome !== "DRAW"
+                : form.normalOutcome === "DRAW";
+
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={unavailable}
+                  className={form.qualificationMethod === id ? "active" : ""}
+                  onClick={() => setQualificationMethod(id)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {form.qualificationMethod === "PENALTIES" && (
+            <div className="qualification-choice">
+              <span>Quem se classificou nos penaltis?</span>
+              <div className="choice-grid two">
                 {[
                   [fixture.home.id, fixture.home.name],
                   [fixture.away.id, fixture.away.name],
@@ -366,24 +370,14 @@ export function PredictionForm({ fixture, prediction, closed, onSubmit }) {
                   </button>
                 ))}
               </div>
-              {form.qualifier && (
-                <div className="choice-grid">
-                  {[
-                    ["EXTRA_TIME", "Na Prorrogacao"],
-                    ["PENALTIES", "Nos Penaltis"],
-                  ].map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={form.qualificationMethod === id ? "active" : ""}
-                      onClick={() => setForm({ ...form, qualificationMethod: id })}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+            </div>
+          )}
+
+          {form.qualificationMethod && form.qualificationMethod !== "PENALTIES" && (
+            <p className="helper-text classification-summary">
+              <strong>{teamNameById(fixture, form.qualifier)}</strong>{" "}
+              passa {form.qualificationMethod === "NORMAL_TIME" ? "no tempo normal" : "na prorrogacao"}.
+            </p>
           )}
         </fieldset>
       )}

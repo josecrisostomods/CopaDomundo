@@ -1,8 +1,44 @@
 import React, { useState } from "react";
-import { Search, CalendarDays } from "lucide-react";
+import { Search, CalendarDays, CircleHelp } from "lucide-react";
 import { ScreenHeading } from "./Shared.jsx";
 import { FixtureCard, FixtureSkeleton } from "./Fixture.jsx";
-import { isFixtureClosed } from "../lib/scoring";
+import { DEFAULT_SCORING, isFixtureClosed } from "../lib/scoring";
+
+function ScoringRules({ settings }) {
+  const scoring = settings || DEFAULT_SCORING;
+  const knockoutMaximum = scoring.exactScore + scoring.qualifier + scoring.qualificationMethod;
+
+  return (
+    <details className="scoring-rules">
+      <summary>
+        <span>
+          <CircleHelp size={19} />
+          <strong>Como funciona a pontuacao?</strong>
+        </span>
+        <small>Ver regras</small>
+      </summary>
+      <div className="scoring-rules-grid">
+        <section>
+          <strong>Fase de grupos</strong>
+          <ul>
+            <li>Resultado correto: <b>+{scoring.outcome} pontos</b></li>
+            <li>Placar exato: <b>{scoring.exactScore} pontos no total</b></li>
+          </ul>
+          <small>O placar exato substitui os pontos do resultado.</small>
+        </section>
+        <section className="knockout-rules">
+          <strong>Mata-mata</strong>
+          <ul>
+            <li>Placar exato: <b>+{scoring.exactScore} pontos</b></li>
+            <li>Quem se classifica: <b>+{scoring.qualifier} pontos</b></li>
+            <li>Como se classifica: <b>+{scoring.qualificationMethod} pontos</b></li>
+          </ul>
+          <small>Voce pode somar ate {knockoutMaximum} pontos por jogo.</small>
+        </section>
+      </div>
+    </details>
+  );
+}
 
 export function GamesView({ fixtures, predictions, onSavePrediction, loading, settings }) {
   const [filter, setFilter] = useState("open");
@@ -27,8 +63,10 @@ export function GamesView({ fixtures, predictions, onSavePrediction, loading, se
       <ScreenHeading
         icon={CalendarDays}
         title="Jogos da Copa"
-        subtitle={`${fixtures.length} jogos no calendario. No mata-mata, escolha tambem quem passa e como passa.`}
+        subtitle={`${fixtures.length} jogos no calendario. Informe o placar e, no mata-mata, como o classificado passou.`}
       />
+
+      <ScoringRules settings={settings} />
 
       <div className="toolbar">
         <div className="search-box">

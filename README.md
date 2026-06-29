@@ -13,7 +13,7 @@ Bolao mobile-first para amigos palpitarem nos jogos da Copa do Mundo. O projeto 
 - Resultados completos da fase de grupos e confrontos confirmados dos 16 avos de final.
 - Chave oficial do mata-mata: ao registrar quem passou, a selecao entra automaticamente na fase seguinte.
 - Palpite de fase de grupos: vencedor, empate e placar exato.
-- Palpite de mata-mata: vencedor ou empate nos 90 minutos, quem passa e se passa no tempo normal, prorrogacao ou penaltis.
+- Palpite de mata-mata em duas etapas: um placar oficial e, depois, como a selecao passou (tempo normal, prorrogacao ou penaltis).
 - Palpites salvos por usuario: o mesmo palpite vale em todas as ligas onde a pessoa participa.
 - Ranking por liga com criterios de desempate.
 - Pontuacao preservada mesmo antes de entrar em uma liga.
@@ -160,10 +160,11 @@ Fase de grupos:
 
 Mata-mata:
 
-- Acertou vencedor ou empate nos 90 minutos: 2 pontos.
-- Acertou placar exato dos 90 minutos: 5 pontos no total.
+- Acertou o placar exato oficial, sem somar a disputa de penaltis: +5 pontos.
 - Acertou quem passa de fase: +2 pontos.
 - Acertou forma de classificacao: +2 pontos.
+- O simples acerto de vencedor ou empate nao pontua separadamente no mata-mata.
+- Maximo por jogo: 9 pontos.
 
 Desempate:
 
