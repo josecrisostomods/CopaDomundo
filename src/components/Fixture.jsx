@@ -178,7 +178,11 @@ export function FixtureHistory({ fixture, settings }) {
                 </div>
                 <div className="history-guess">
                   <strong>{p.homeScore} x {p.awayScore}</strong>
-                  {fixture.stageType === "KNOCKOUT" && <small>({teamNameById(fixture, p.qualifier)})</small>}
+                  {fixture.stageType === "KNOCKOUT" && (
+                    <small>
+                      {teamNameById(fixture, p.qualifier)} · {methodLabel(p.qualificationMethod)}
+                    </small>
+                  )}
                 </div>
                 {points !== null && <b className="history-points">{points} pts</b>}
               </div>
