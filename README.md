@@ -131,6 +131,39 @@ where username = 'SEU_USUARIO';
 
 Nunca grave senhas no repositorio, em migrations ou na documentacao. As acoes administrativas passam por RPC com validacao de sessao e papel `admin`; as tabelas sensiveis seguem bloqueadas para acesso direto pelo cliente.
 
+### Assistente do site
+
+O chatbot fica disponivel em todas as telas, inclusive antes do login, e escolhe
+automaticamente um destes modos:
+
+- **Publico:** explica o funcionamento, as regras de pontuacao, o calendario,
+  resultados e ligas publicas. Nao recebe usuarios, palpites individuais ou
+  qualquer dado privado.
+- **Administrativo:** liberado somente quando a sessao pertence ao perfil
+  definido em `ADMIN_CHAT_USER_ID`. Pode
+  analisar usuarios, ligas, membros, partidas, palpites, configuracoes e logs de
+  sincronizacao. Alteracoes sempre exigem confirmacao na interface.
+
+Configure estas variaveis somente no servidor da Vercel:
+
+```bash
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.6-terra
+ADMIN_CHAT_USER_ID=
+```
+
+O chatbot nunca usa nome ou username para autorizar o modo administrativo.
+Para localizar o UUID do perfil administrativo no SQL Editor:
+
+```sql
+select id, username, name
+from public.profiles
+where role = 'admin';
+```
+
+O servidor nunca envia senhas, hashes, codigos de recuperacao, tokens de sessao
+ou chaves privadas ao modelo.
+
 ## Deploy na Vercel
 
 O `vercel.json` ja esta configurado:
