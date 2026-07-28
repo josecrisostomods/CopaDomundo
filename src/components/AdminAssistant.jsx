@@ -9,7 +9,7 @@ const INITIAL_MESSAGES = [
   {
     role: "assistant",
     content:
-      "Olá! Sou o assistente interno do site. Posso explicar as regras e consultar partidas, resultados, ligas e ranking usando os dados já carregados.",
+      "Olá! Conheço as telas, regras e recursos do site. Posso orientar sobre conta, jogos, palpites, pontuação, mata-mata, bônus, ranking, ligas e, quando autorizado, administração. Também consulto os dados já carregados.",
   },
 ];
 
@@ -18,6 +18,7 @@ export function AppAssistant({ canUseAdmin, assistantContext }) {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [draft, setDraft] = useState("");
   const [replySuggestions, setReplySuggestions] = useState([]);
+  const [lastIntent, setLastIntent] = useState("");
   const messagesEndRef = useRef(null);
 
   const starterSuggestions = useMemo(
@@ -41,6 +42,7 @@ export function AppAssistant({ canUseAdmin, assistantContext }) {
     const response = getAppAssistantResponse(normalized, {
       ...assistantContext,
       canUseAdmin,
+      lastIntent,
     });
 
     setMessages((current) => [
@@ -53,6 +55,7 @@ export function AppAssistant({ canUseAdmin, assistantContext }) {
       },
     ]);
     setReplySuggestions(response.suggestions || []);
+    if (response.intentId) setLastIntent(response.intentId);
     setDraft("");
   }
 

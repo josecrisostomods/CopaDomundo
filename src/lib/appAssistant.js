@@ -1,7 +1,14 @@
 import { DEFAULT_SCORING } from "./scoring.js";
+import {
+  APP_ASSISTANT_SYSTEM_PROMPT,
+  SITE_KNOWLEDGE_SUGGESTIONS,
+  SITE_KNOWLEDGE_TOPICS,
+} from "./appAssistantKnowledge.js";
 
 const HELP_TEXT =
-  "Posso consultar jogos, resultados, classificação, ligas e seus dados atuais, além de explicar palpites, bônus e todas as regras do site.";
+  "Posso explicar todo o site e consultar jogos, resultados, ranking, ligas, participantes, palpites e bônus usando os dados atuais da aplicação.";
+
+export { APP_ASSISTANT_SYSTEM_PROMPT };
 
 const PUBLIC_STARTER_SUGGESTIONS = [
   "Quais são os próximos jogos?",
@@ -12,15 +19,23 @@ const PUBLIC_STARTER_SUGGESTIONS = [
   "Como entrar em uma liga?",
   "Quando o palpite fecha?",
   "Como funciona o mata-mata?",
+  "Quais são minhas ligas?",
+  "Quantos jogos faltam para eu palpitar?",
+  "Como recupero minha conta?",
+  "O que o chatbot consegue responder?",
 ];
 
 const ADMIN_STARTER_SUGGESTIONS = [
   "Resuma a situação atual do aplicativo.",
   "Quais dados precisam de atenção administrativa?",
   "Quando ocorreu a última sincronização?",
+  "Como o administrador gerencia usuários?",
+  "Como o administrador atualiza um resultado?",
+  "Como o administrador gerencia ligas?",
 ];
 
 const INTENTS = [
+  ...SITE_KNOWLEDGE_TOPICS,
   {
     id: "scoring",
     label: "a pontuação",
@@ -399,6 +414,7 @@ const INTENTS = [
 ];
 
 const INTENT_SUGGESTIONS = {
+  ...SITE_KNOWLEDGE_SUGGESTIONS,
   scoring: [
     "Como funciona o desempate do ranking?",
     "Como funciona o mata-mata?",
@@ -576,13 +592,25 @@ const INTENT_SUGGESTIONS = {
 };
 
 export function normalizeAssistantText(value = "") {
-  return String(value)
+  const normalized = String(value)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s-]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  const commonCorrections = {
+    pq: "porque",
+    concigo: "consigo",
+    edita: "editar",
+    ligaspublicas: "ligas publicas",
+  };
+
+  return normalized
+    .split(" ")
+    .map((word) => commonCorrections[word] || word)
+    .join(" ");
 }
 
 export function getAssistantStarterSuggestions(canUseAdmin = false) {
@@ -632,12 +660,15 @@ function wordSimilarity(left, right) {
 }
 
 function phraseScore(query, phrase) {
-  if (includesPhrase(query, phrase)) {
-    return { score: 1 + phrase.split(" ").length * 0.03, exact: true };
-  }
-
   const queryTokens = query.split(" ").filter(Boolean);
   const phraseTokens = phrase.split(" ").filter(Boolean);
+
+  if (includesPhrase(query, phrase)) {
+    const coverage = Math.min(1, phraseTokens.length / Math.max(queryTokens.length, 1));
+    const specificity = Math.min(0.14, phraseTokens.length * 0.028);
+    return { score: 0.86 + specificity + coverage * 0.1, exact: true };
+  }
+
   if (!queryTokens.length || !phraseTokens.length) return { score: 0, exact: false };
 
   const similarities = phraseTokens.map((phraseToken) =>
@@ -650,8 +681,11 @@ function phraseScore(query, phrase) {
 }
 
 function resolveIntent(query, canUseAdmin) {
-  const candidates = INTENTS.filter((intent) => canUseAdmin || intent.id !== "admin").map((intent) => {
-    const matches = intent.phrases.map((phrase) => ({
+  const candidates = INTENTS.filter(
+    (intent) => canUseAdmin || (intent.id !== "admin" && !intent.adminOnly),
+  ).map((intent) => {
+    const phrases = [normalizeAssistantText(intent.example), ...intent.phrases];
+    const matches = phrases.map((phrase) => ({
       ...phraseScore(query, phrase),
       phrase,
     }));
@@ -778,6 +812,98 @@ function adminReply(context, now) {
   ].join("\n");
 }
 
+function activeLeagueReply({ currentUser, activeLeague, membersByLeague }) {
+  if (!currentUser) {
+    return "Entre na sua conta para selecionar uma liga. Depois, abra Liga para criar, entrar ou trocar a liga ativa.";
+  }
+  if (!activeLeague) {
+    return "Nenhuma liga está ativa. Abra Liga, entre em uma competição ou escolha uma opção em Minhas Ligas.";
+  }
+
+  const members = membersByLeague[activeLeague.id] || [];
+  const visibility = activeLeague.isPublic ? "pública" : "privada";
+  return `A liga ativa é “${activeLeague.name}”, uma liga ${visibility} com ${activeLeague.memberCount || members.length || 1} participante(s). Para trocar, abra Liga e escolha outra opção em Minhas Ligas.`;
+}
+
+function myLeaguesReply({ currentUser, leagues, activeLeague }) {
+  if (!currentUser) return "Entre na sua conta para consultar as ligas das quais você participa.";
+  if (!leagues.length) return "Você ainda não participa de nenhuma liga. Abra Liga para criar uma ou entrar por convite ou pela lista pública.";
+
+  return `Você participa de ${leagues.length} liga(s):\n${leagues
+    .map((league) => `• ${league.name}${league.id === activeLeague?.id ? " — ativa" : ""}`)
+    .join("\n")}`;
+}
+
+function publicLeaguesReply({ currentUser, publicLeagues }) {
+  if (!currentUser) return "Entre na sua conta para consultar e participar das ligas públicas disponíveis.";
+  if (!publicLeagues.length) {
+    return "Não há ligas públicas disponíveis para entrada nesta sessão. Você pode já participar das existentes; confira Minhas Ligas ou use um código de convite.";
+  }
+
+  return `Ligas públicas disponíveis:\n${publicLeagues
+    .slice(0, 8)
+    .map((league) => `• ${league.name} — ${league.memberCount || 1} participante(s)`)
+    .join("\n")}`;
+}
+
+function leagueMembersReply({ currentUser, activeLeague, membersByLeague }) {
+  if (!currentUser) return "Entre na sua conta e selecione uma liga para consultar seus participantes.";
+  if (!activeLeague) return "Nenhuma liga está ativa. Abra Liga e selecione uma competição.";
+
+  const members = membersByLeague[activeLeague.id] || [];
+  if (!members.length) {
+    return `Ainda não há participantes carregados para a liga “${activeLeague.name}”. Confira a lista na área Liga ou atualize a página.`;
+  }
+
+  return `Participantes da liga “${activeLeague.name}”:\n${members
+    .slice(0, 12)
+    .map((member) => `• ${member.name}${member.id === activeLeague.ownerId ? " — dono" : ""}`)
+    .join("\n")}${members.length > 12 ? `\n• e mais ${members.length - 12} participante(s)` : ""}`;
+}
+
+function predictionProgressReply({ currentUser, fixtures, userPredictions }, now) {
+  if (!currentUser) return "Entre na sua conta e participe de uma liga para acompanhar seus palpites.";
+
+  const predictedFixtureIds = new Set(userPredictions.map((prediction) => prediction.fixtureId));
+  const openFixtures = fixtures.filter(
+    (fixture) =>
+      fixture.status === "SCHEDULED" &&
+      new Date(fixture.kickoff).getTime() > now &&
+      ![fixture.home?.id, fixture.away?.id].some((id) => String(id || "").startsWith("slot-")),
+  );
+  const pending = openFixtures.filter((fixture) => !predictedFixtureIds.has(fixture.id));
+  const finishedPredictions = fixtures.filter(
+    (fixture) => fixture.status === "FINISHED" && predictedFixtureIds.has(fixture.id),
+  ).length;
+
+  return [
+    `Você possui ${userPredictions.length} palpite(s) salvo(s).`,
+    `Ainda há ${pending.length} jogo(s) aberto(s) sem o seu palpite.`,
+    `${finishedPredictions} palpite(s) já correspondem a jogos finalizados.`,
+    pending.length ? `Próximo pendente: ${formatFixture(pending.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff))[0])}.` : "Você não tem jogo aberto pendente nos dados atuais.",
+  ].join("\n");
+}
+
+function myBonusReply({ currentUser, activeLeague, bonusPredictions, fixtures }) {
+  if (!currentUser) return "Entre na sua conta para consultar seus palpites bônus.";
+  if (!activeLeague) return "Selecione uma liga para consultar os bônus salvos nela.";
+
+  const bonus = bonusPredictions.find(
+    (item) => item.userId === currentUser.id && item.leagueId === activeLeague.id,
+  );
+  if (!bonus) return `Você ainda não salvou palpites bônus na liga “${activeLeague.name}”.`;
+
+  const teams = fixtures.flatMap((fixture) => [fixture.home, fixture.away]);
+  const champion = teams.find((team) => team?.id === bonus.championTeamId)?.name || "não escolhido";
+  return [
+    `Seus bônus na liga “${activeLeague.name}”:`,
+    `• Campeão: ${champion}.`,
+    `• Artilheiro: ${bonus.topScorerName || "não escolhido"}.`,
+    `• Revelação: ${bonus.revelationName || "não escolhida"}.`,
+    activeLeague.settings?.bonusLocked ? "Os bônus desta liga estão encerrados." : "Os bônus ainda podem ser alterados.",
+  ].join("\n");
+}
+
 function findTeamQuestion(query, fixtures, now) {
   const teams = new Map();
   fixtures.forEach((fixture) => {
@@ -824,11 +950,27 @@ function findTeamQuestion(query, fixtures, now) {
       "Como está o ranking?",
     ],
     interpretedAs: best.exact ? "" : `Entendi que você quis consultar ${best.teamName}.`,
+    intentId: wantsResult ? "results" : "upcoming",
   };
 }
 
 function replyForIntent(intentId, context, now) {
+  const knowledgeTopic = SITE_KNOWLEDGE_TOPICS.find((topic) => topic.id === intentId);
+  if (knowledgeTopic?.answer) return knowledgeTopic.answer;
+
   switch (intentId) {
+    case "active_league":
+      return activeLeagueReply(context);
+    case "my_leagues":
+      return myLeaguesReply(context);
+    case "public_league_list":
+      return publicLeaguesReply(context);
+    case "league_members":
+      return leagueMembersReply(context);
+    case "prediction_progress":
+      return predictionProgressReply(context, now);
+    case "my_bonus":
+      return myBonusReply(context);
     case "scoring":
       return scoringReply(context.activeLeague);
     case "upcoming":
@@ -910,11 +1052,16 @@ function buildSafeContext(context) {
     ranking: Array.isArray(context.ranking) ? context.ranking : [],
     userPredictions: Array.isArray(context.userPredictions) ? context.userPredictions : [],
     bonusPredictions: Array.isArray(context.bonusPredictions) ? context.bonusPredictions : [],
+    membersByLeague:
+      context.membersByLeague && typeof context.membersByLeague === "object"
+        ? context.membersByLeague
+        : {},
     currentUser: context.currentUser || null,
     activeLeague: context.activeLeague || null,
     adminState: context.adminState || {},
     canUseAdmin: Boolean(context.canUseAdmin),
     lastSync: context.lastSync || "",
+    lastIntent: typeof context.lastIntent === "string" ? context.lastIntent : "",
   };
 }
 
@@ -934,8 +1081,28 @@ export function getAppAssistantResponse(message, context = {}) {
 
   if (!safeContext.canUseAdmin && includesAny(query, ["admin", "administrativo", "area admin"])) {
     return {
-      answer: "A área administrativa é restrita a contas autorizadas. Posso continuar ajudando com jogos, resultados, palpites, ligas, ranking e regras públicas.",
+      answer: "A área administrativa é restrita a sessões autorizadas. Por segurança, o assistente não identifica contas administrativas nem revela credenciais. Posso continuar ajudando com jogos, resultados, palpites, ligas, ranking e regras públicas.",
       suggestions: PUBLIC_STARTER_SUGGESTIONS.slice(0, 5),
+    };
+  }
+
+  if (
+    safeContext.lastIntent &&
+    includesAny(query, [
+      "como faco isso",
+      "onde fica isso",
+      "me explica melhor",
+      "explique melhor",
+      "e depois",
+      "pode detalhar",
+      "quero saber mais",
+      "mais detalhes",
+    ])
+  ) {
+    return {
+      answer: replyForIntent(safeContext.lastIntent, safeContext, now),
+      suggestions: INTENT_SUGGESTIONS[safeContext.lastIntent] || starterSuggestions.slice(0, 4),
+      intentId: safeContext.lastIntent,
     };
   }
 
@@ -948,6 +1115,7 @@ export function getAppAssistantResponse(message, context = {}) {
       answer: replyForIntent(intent.id, safeContext, now),
       suggestions: INTENT_SUGGESTIONS[intent.id] || starterSuggestions.slice(0, 4),
       interpretedAs: intent.exact ? "" : `Entendi que você quis perguntar sobre ${intent.label}.`,
+      intentId: intent.id,
     };
   }
 
@@ -960,6 +1128,7 @@ export function getAppAssistantResponse(message, context = {}) {
       answer: `Não tive certeza da pergunta. Você quis dizer “${intent.example}”? Toque em uma opção abaixo ou escreva novamente com mais detalhes.`,
       suggestions: alternatives,
       interpretedAs: `A intenção mais provável é ${intent.label}.`,
+      intentId: intent.id,
     };
   }
 
