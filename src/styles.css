@@ -1820,6 +1820,7 @@ legend {
   gap: 10px;
   overflow-y: auto;
   padding: 15px;
+  scroll-behavior: smooth;
 }
 
 .assistant-message {
@@ -1851,6 +1852,20 @@ legend {
   white-space: pre-wrap;
 }
 
+.assistant-interpretation {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--gold);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.assistant-message-end {
+  width: 100%;
+  height: 1px;
+  flex: 0 0 1px;
+}
+
 .assistant-thinking {
   display: flex;
   align-items: center;
@@ -1862,7 +1877,16 @@ legend {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  max-height: 142px;
+  overflow-y: auto;
   padding: 0 15px 12px;
+}
+
+.assistant-suggestions > small {
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .assistant-suggestions button {

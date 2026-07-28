@@ -63,6 +63,8 @@ function AppContent() {
         publicLeagues,
         activeLeague,
         ranking,
+        userPredictions,
+        bonusPredictions,
         adminState,
         lastSync,
       }}

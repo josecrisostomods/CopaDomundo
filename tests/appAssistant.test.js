@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { answerAppQuestion, normalizeAssistantText } from "../src/lib/appAssistant.js";
+import {
+  answerAppQuestion,
+  getAppAssistantResponse,
+  normalizeAssistantText,
+} from "../src/lib/appAssistant.js";
 
 const fixtures = [
   {
@@ -30,6 +34,7 @@ const baseContext = {
   activeLeague: { name: "Liga Teste" },
   currentUser: { id: "user-1", name: "Usuário" },
   ranking: [{ id: "user-1", name: "Usuário", position: 1, points: 12 }],
+  userPredictions: [{ fixtureId: "finished", userId: "user-1" }],
 };
 
 test("normaliza acentos e pontuação", () => {
@@ -71,4 +76,42 @@ test("apresenta resumo administrativo somente para conta autorizada", () => {
   assert.match(reply, /Resumo administrativo/);
   assert.match(reply, /1 usuário/);
   assert.match(reply, /aba Admin/);
+});
+
+test("entende erros de digitação em perguntas sobre pontuação", () => {
+  const response = getAppAssistantResponse("cm funsiona a pontuassao?", baseContext);
+  assert.match(response.answer, /Placar exato: 5 pontos/);
+  assert.match(response.interpretedAs, /pontuação/);
+  assert.ok(response.suggestions.length >= 4);
+});
+
+test("entende erros de digitação em perguntas sobre próximos jogos", () => {
+  const response = getAppAssistantResponse("quais os prossimos jgos?", baseContext);
+  assert.match(response.answer, /Brasil x Argentina/);
+  assert.match(response.interpretedAs, /próximos jogos/);
+});
+
+test("reconhece nome de seleção escrito errado", () => {
+  const response = getAppAssistantResponse("qndo joga o brasl?", baseContext);
+  assert.match(response.answer, /Brasil x Argentina/);
+  assert.match(response.interpretedAs, /Brasil/);
+});
+
+test("responde dados personalizados da conta conectada", () => {
+  const reply = answerAppQuestion("quantos pontos e palpites eu tenho?", baseContext);
+  assert.match(reply, /1º lugar com 12 ponto/);
+  assert.match(reply, /1 palpite/);
+});
+
+test("explica regras adicionais do aplicativo", () => {
+  assert.match(answerAppQuestion("qual o máximo de pontos por jogo?", baseContext), /até 9 pontos/);
+  assert.match(answerAppQuestion("meu palpite vale em todas as ligas?", baseContext), /todas as ligas/);
+  assert.match(answerAppQuestion("placar inclui os pênaltis?", baseContext), /sem somar a disputa/);
+  assert.match(answerAppQuestion("o bolão vale dinheiro?", baseContext), /não registra apostas/i);
+});
+
+test("oferece opções quando não entende a pergunta", () => {
+  const response = getAppAssistantResponse("xyz coisa desconhecida", baseContext);
+  assert.match(response.answer, /não reconheci/i);
+  assert.ok(response.suggestions.length >= 5);
 });
