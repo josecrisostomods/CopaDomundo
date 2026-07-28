@@ -1,6 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, LockKeyhole, Send, Sparkles, X } from "lucide-react";
-import { answerAppQuestion } from "../lib/appAssistant.js";
+import {
+  getAppAssistantResponse,
+  getAssistantStarterSuggestions,
+} from "../lib/appAssistant.js";
 
 const INITIAL_MESSAGES = [
   {
@@ -10,32 +13,32 @@ const INITIAL_MESSAGES = [
   },
 ];
 
-const PUBLIC_SUGGESTIONS = [
-  "Como funciona a pontuação?",
-  "Quais são os próximos jogos?",
-  "Como criar ou entrar em uma liga?",
-];
-
-const ADMIN_SUGGESTIONS = [
-  "Resuma a situação atual do aplicativo.",
-  "Quais dados precisam de atenção administrativa?",
-];
-
 export function AppAssistant({ canUseAdmin, assistantContext }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [draft, setDraft] = useState("");
+  const [replySuggestions, setReplySuggestions] = useState([]);
+  const messagesEndRef = useRef(null);
 
-  const suggestions = useMemo(
-    () => (canUseAdmin ? [...ADMIN_SUGGESTIONS, ...PUBLIC_SUGGESTIONS] : PUBLIC_SUGGESTIONS),
+  const starterSuggestions = useMemo(
+    () => getAssistantStarterSuggestions(canUseAdmin),
     [canUseAdmin],
   );
+  const suggestions = replySuggestions.length ? replySuggestions : starterSuggestions;
+
+  useEffect(() => {
+    if (!open) return;
+    messagesEndRef.current?.scrollIntoView({
+      behavior: messages.length > 1 ? "smooth" : "auto",
+      block: "end",
+    });
+  }, [messages, open]);
 
   function sendMessage(content) {
     const normalized = content.trim();
     if (!normalized) return;
 
-    const reply = answerAppQuestion(normalized, {
+    const response = getAppAssistantResponse(normalized, {
       ...assistantContext,
       canUseAdmin,
     });
@@ -43,8 +46,13 @@ export function AppAssistant({ canUseAdmin, assistantContext }) {
     setMessages((current) => [
       ...current,
       { role: "user", content: normalized },
-      { role: "assistant", content: reply },
+      {
+        role: "assistant",
+        content: response.answer,
+        interpretation: response.interpretedAs,
+      },
     ]);
+    setReplySuggestions(response.suggestions || []);
     setDraft("");
   }
 
@@ -95,13 +103,18 @@ export function AppAssistant({ canUseAdmin, assistantContext }) {
             {messages.map((message, index) => (
               <article key={`${message.role}-${index}`} className={`assistant-message ${message.role}`}>
                 <strong>{message.role === "user" ? "Você" : "Assistente"}</strong>
+                {message.interpretation && (
+                  <small className="assistant-interpretation">{message.interpretation}</small>
+                )}
                 <p>{message.content}</p>
               </article>
             ))}
+            <div className="assistant-message-end" ref={messagesEndRef} aria-hidden="true" />
           </div>
 
-          {messages.length === 1 && (
+          {suggestions.length > 0 && (
             <div className="assistant-suggestions">
+              <small>Você também pode perguntar:</small>
               {suggestions.map((suggestion) => (
                 <button key={suggestion} type="button" onClick={() => sendMessage(suggestion)}>
                   <Sparkles size={14} />
