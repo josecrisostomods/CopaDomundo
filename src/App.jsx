@@ -31,7 +31,6 @@ function AppContent() {
     ranking,
     profileRank,
     adminState,
-    sessionToken,
     syncState,
     dataState,
     lastSync,
@@ -54,47 +53,19 @@ function AppContent() {
     handleLogout,
   } = useApp();
 
-  async function confirmAssistantAction(action) {
-    if (!currentUser?.isAdmin) throw new Error("Acesso administrativo não autorizado.");
-    const args = action.arguments || {};
-
-    switch (action.name) {
-      case "create_league":
-        return adminCreateLeague(args.name, args.is_public);
-      case "update_league":
-        return adminUpdateLeague({
-          leagueId: args.league_id,
-          name: args.name,
-          isPublic: args.is_public,
-        });
-      case "delete_league":
-        return adminDeleteLeague(args.league_id);
-      case "delete_user":
-        if (args.user_id === currentUser.id) throw new Error("Você não pode excluir sua própria conta.");
-        return adminDeleteUser(args.user_id);
-      case "update_fixture_result": {
-        const fixture = fixtures.find((item) => item.id === args.fixture_id);
-        if (!fixture) throw new Error("A partida não foi encontrada nos dados atuais.");
-        return adminUpdateFixtureResult({
-          fixtureId: args.fixture_id,
-          status: args.status,
-          homeScore: args.home_score,
-          awayScore: args.away_score,
-          winnerTeamId: args.winner_team_id,
-          classificationMethod: args.classification_method,
-          fixture,
-        });
-      }
-      default:
-        throw new Error("Ação administrativa não permitida.");
-    }
-  }
-
   const assistant = (
     <AppAssistant
-      sessionToken={sessionToken}
       canUseAdmin={Boolean(currentUser?.isAdmin)}
-      onConfirmAction={confirmAssistantAction}
+      assistantContext={{
+        currentUser,
+        fixtures,
+        leagues,
+        publicLeagues,
+        activeLeague,
+        ranking,
+        adminState,
+        lastSync,
+      }}
     />
   );
 
