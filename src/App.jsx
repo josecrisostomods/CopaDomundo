@@ -7,6 +7,7 @@ import { BonusPredictions } from "./components/BonusPredictions.jsx";
 import { RankingView } from "./components/RankingView.jsx";
 import { ProfileView } from "./components/ProfileView.jsx";
 import { AdminView } from "./components/AdminView.jsx";
+import { AppAssistant } from "./components/AdminAssistant.jsx";
 import { AppProvider, useApp } from "./contexts/AppContext.jsx";
 import { isSupabaseConfigured } from "./lib/supabase";
 
@@ -52,16 +53,47 @@ function AppContent() {
     handleLogout,
   } = useApp();
 
+  const assistant = (
+    <AppAssistant
+      canUseAdmin={Boolean(currentUser?.isAdmin)}
+      assistantContext={{
+        currentUser,
+        fixtures,
+        leagues,
+        publicLeagues,
+        activeLeague,
+        ranking,
+        adminState,
+        lastSync,
+      }}
+    />
+  );
+
   if (!profile) {
-    return <LoginScreen onPlayerAuth={handlePlayerAuth} isSupabaseConfigured={isSupabaseConfigured} />;
+    return (
+      <>
+        <LoginScreen onPlayerAuth={handlePlayerAuth} isSupabaseConfigured={isSupabaseConfigured} />
+        {assistant}
+      </>
+    );
   }
 
   if (recoveryCode) {
-    return <RecoveryCodeScreen code={recoveryCode} onContinue={clearRecoveryCode} />;
+    return (
+      <>
+        <RecoveryCodeScreen code={recoveryCode} onContinue={clearRecoveryCode} />
+        {assistant}
+      </>
+    );
   }
 
   if (!profile.displayNameSet) {
-    return <DisplayNameScreen onSaveName={updateProfile} />;
+    return (
+      <>
+        <DisplayNameScreen onSaveName={updateProfile} />
+        {assistant}
+      </>
+    );
   }
 
   return (
@@ -171,6 +203,7 @@ function AppContent() {
       </main>
 
       <BottomNav activeTab={activeTab} profile={currentUser} setActiveTab={setActiveTab} />
+      {assistant}
     </div>
   );
 }

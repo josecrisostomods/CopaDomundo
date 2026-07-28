@@ -131,6 +131,23 @@ where username = 'SEU_USUARIO';
 
 Nunca grave senhas no repositorio, em migrations ou na documentacao. As acoes administrativas passam por RPC com validacao de sessao e papel `admin`; as tabelas sensiveis seguem bloqueadas para acesso direto pelo cliente.
 
+### Assistente do site
+
+O assistente fica disponivel em todas as telas, inclusive antes do login, e
+funciona inteiramente dentro da aplicacao. Ele nao usa OpenAI, Gemini ou qualquer
+outro modelo externo e nao precisa de chave de API.
+
+- **Publico:** explica as regras, a pontuacao, os palpites e as ligas; consulta
+  calendario e resultados ja carregados no site.
+- **Conta conectada:** tambem consulta o ranking e a liga ativa.
+- **Administrativo:** quando a sessao pertence a uma conta com papel `admin`,
+  apresenta um resumo dos usuarios, ligas, partidas e dados que precisam de
+  atencao. Alteracoes continuam sendo feitas na aba Admin.
+
+Como as respostas sao baseadas em regras, o assistente responde aos assuntos
+previstos pela aplicacao e orienta o usuario quando nao reconhece uma pergunta.
+Nenhum dado e enviado a um servico de inteligencia artificial.
+
 ## Deploy na Vercel
 
 O `vercel.json` ja esta configurado:

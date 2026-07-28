@@ -1713,3 +1713,271 @@ legend {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.assistant-launcher {
+  position: fixed;
+  right: 18px;
+  bottom: 88px;
+  z-index: 90;
+  display: inline-flex;
+  min-width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 17px;
+  border: 1px solid rgba(53, 194, 255, 0.42);
+  border-radius: 999px;
+  color: #03121d;
+  background: linear-gradient(135deg, var(--blue), #7ee7ff);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.38);
+  font-weight: 900;
+}
+
+.assistant-launcher:hover {
+  transform: translateY(-2px);
+}
+
+.assistant-window {
+  position: fixed;
+  right: 18px;
+  bottom: 156px;
+  z-index: 89;
+  display: flex;
+  width: min(430px, calc(100vw - 28px));
+  max-height: min(680px, calc(100dvh - 180px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(53, 194, 255, 0.25);
+  border-radius: 22px;
+  background: #0c192a;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.assistant-header,
+.assistant-title,
+.assistant-confirmation-actions,
+.assistant-composer {
+  display: flex;
+  align-items: center;
+}
+
+.assistant-header {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.assistant-title {
+  gap: 10px;
+}
+
+.assistant-title > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.assistant-title small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.assistant-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--blue);
+  background: rgba(53, 194, 255, 0.12);
+}
+
+.assistant-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.assistant-mode.admin {
+  border-color: rgba(23, 184, 144, 0.38);
+  color: var(--green);
+  background: rgba(23, 184, 144, 0.08);
+}
+
+.assistant-messages {
+  display: flex;
+  min-height: 180px;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 15px;
+}
+
+.assistant-message {
+  max-width: 88%;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 15px 15px 15px 5px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.assistant-message.user {
+  align-self: flex-end;
+  border-color: rgba(53, 194, 255, 0.28);
+  border-radius: 15px 15px 5px 15px;
+  background: rgba(53, 194, 255, 0.1);
+}
+
+.assistant-message strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--blue);
+  font-size: 0.72rem;
+}
+
+.assistant-message p,
+.assistant-confirmation p {
+  margin: 0;
+  line-height: 1.48;
+  white-space: pre-wrap;
+}
+
+.assistant-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.assistant-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 15px 12px;
+}
+
+.assistant-suggestions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.assistant-suggestions button:hover {
+  border-color: rgba(53, 194, 255, 0.55);
+  color: var(--blue);
+}
+
+.assistant-confirmation {
+  margin: 0 15px 12px;
+  padding: 12px;
+  border: 1px solid rgba(240, 180, 41, 0.42);
+  border-radius: 13px;
+  background: rgba(240, 180, 41, 0.08);
+}
+
+.assistant-confirmation strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--gold);
+}
+
+.assistant-confirmation-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.assistant-confirmation-actions button {
+  width: auto;
+}
+
+.assistant-error {
+  margin: 0 15px 10px;
+  color: var(--red);
+  font-size: 0.82rem;
+}
+
+.assistant-composer {
+  gap: 9px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.assistant-composer textarea {
+  width: 100%;
+  min-height: 48px;
+  max-height: 130px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  outline: none;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  padding: 10px 11px;
+  font: inherit;
+}
+
+.assistant-composer textarea:focus {
+  border-color: rgba(53, 194, 255, 0.72);
+  box-shadow: 0 0 0 3px rgba(53, 194, 255, 0.12);
+}
+
+.assistant-composer > button {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  place-items: center;
+  border: 0;
+  border-radius: 13px;
+  color: #04141f;
+  background: var(--blue);
+}
+
+@media (max-width: 640px) {
+  .assistant-launcher {
+    right: 12px;
+    bottom: 82px;
+    min-width: 52px;
+    height: 52px;
+    padding: 0 14px;
+  }
+
+  .assistant-window {
+    right: 8px;
+    bottom: 142px;
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 158px);
+    border-radius: 18px;
+  }
+
+  .assistant-message {
+    max-width: 94%;
+  }
+
+  .assistant-confirmation-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .assistant-confirmation-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+}
