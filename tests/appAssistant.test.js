@@ -1,26 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  APP_ASSISTANT_SYSTEM_PROMPT,
   answerAppQuestion,
   getAppAssistantResponse,
   normalizeAssistantText,
 } from "../src/lib/appAssistant.js";
+import { SITE_KNOWLEDGE_TOPICS } from "../src/lib/appAssistantKnowledge.js";
 
 const fixtures = [
   {
     id: "future",
     kickoff: "2026-08-01T20:00:00-03:00",
     status: "SCHEDULED",
-    home: { name: "Brasil" },
-    away: { name: "Argentina" },
+    home: { id: "brasil", name: "Brasil" },
+    away: { id: "argentina", name: "Argentina" },
     venue: "Estádio Central",
   },
   {
     id: "finished",
     kickoff: "2026-07-20T20:00:00-03:00",
     status: "FINISHED",
-    home: { name: "Portugal" },
-    away: { name: "Espanha" },
+    home: { id: "portugal", name: "Portugal" },
+    away: { id: "espanha", name: "Espanha" },
     homeScore: 2,
     awayScore: 1,
   },
@@ -30,11 +32,24 @@ const baseContext = {
   now: new Date("2026-07-27T12:00:00-03:00").getTime(),
   fixtures,
   leagues: [{ id: "league-1", name: "Liga Teste" }],
-  publicLeagues: [],
-  activeLeague: { name: "Liga Teste" },
+  publicLeagues: [{ id: "league-public", name: "Liga Aberta", memberCount: 4 }],
+  activeLeague: { id: "league-1", name: "Liga Teste", ownerId: "user-1", isPublic: false, settings: { bonusLocked: false } },
   currentUser: { id: "user-1", name: "Usuário" },
   ranking: [{ id: "user-1", name: "Usuário", position: 1, points: 12 }],
   userPredictions: [{ fixtureId: "finished", userId: "user-1" }],
+  bonusPredictions: [{
+    leagueId: "league-1",
+    userId: "user-1",
+    championTeamId: "brasil",
+    topScorerName: "Atacante",
+    revelationName: "Revelação",
+  }],
+  membersByLeague: {
+    "league-1": [
+      { id: "user-1", name: "Usuário" },
+      { id: "user-2", name: "Participante" },
+    ],
+  },
 };
 
 test("normaliza acentos e pontuação", () => {
@@ -114,4 +129,90 @@ test("oferece opções quando não entende a pergunta", () => {
   const response = getAppAssistantResponse("xyz coisa desconhecida", baseContext);
   assert.match(response.answer, /não reconheci/i);
   assert.ok(response.suggestions.length >= 5);
+});
+
+test("mantém um prompt completo com limites de segurança e privacidade", () => {
+  assert.match(APP_ASSISTANT_SYSTEM_PROMPT, /telas, regras, limites, pontuação/i);
+  assert.match(APP_ASSISTANT_SYSTEM_PROMPT, /Nunca revelar senhas, chaves de API/i);
+  assert.match(APP_ASSISTANT_SYSTEM_PROMPT, /Nunca identificar uma conta administrativa/i);
+  assert.match(APP_ASSISTANT_SYSTEM_PROMPT, /não citar nomes pessoais como proprietário/i);
+});
+
+test("explica recursos detalhados de todas as áreas do site", () => {
+  assert.match(answerAppQuestion("o que aparece na tela início?", baseContext), /liga ativa/i);
+  assert.match(answerAppQuestion("posso filtrar o ranking por dia?", baseContext), /últimos 7 dias/i);
+  assert.match(answerAppQuestion("onde vejo o gráfico de desempenho?", baseContext), /Gráfico de Desempenho/i);
+  assert.match(answerAppQuestion("quando posso ver os palpites dos outros?", baseContext), /Palpites da Liga/i);
+  assert.match(answerAppQuestion("por que o bônus está bloqueado?", baseContext), /configurações da liga/i);
+});
+
+test("consulta ligas e participantes usando os dados atuais da sessão", () => {
+  const leaguesReply = answerAppQuestion("quais são minhas ligas?", baseContext);
+  const publicReply = answerAppQuestion("quais ligas públicas estão disponíveis?", baseContext);
+  const membersReply = answerAppQuestion("quem participa da liga ativa?", baseContext);
+
+  assert.match(leaguesReply, /Liga Teste — ativa/);
+  assert.match(publicReply, /Liga Aberta — 4 participante/);
+  assert.match(membersReply, /Usuário — dono/);
+  assert.match(membersReply, /Participante/);
+});
+
+test("resume palpites pendentes e bônus salvos da conta", () => {
+  const predictionReply = answerAppQuestion("quantos jogos ainda faltam para eu palpitar?", baseContext);
+  const bonusReply = answerAppQuestion("quais bônus eu salvei?", baseContext);
+
+  assert.match(predictionReply, /1 jogo\(s\) aberto\(s\) sem o seu palpite/);
+  assert.match(bonusReply, /Artilheiro: Atacante/);
+  assert.match(bonusReply, /Revelação: Revelação/);
+});
+
+test("usa o assunto anterior para perguntas curtas de continuação", () => {
+  const response = getAppAssistantResponse("me explica melhor", {
+    ...baseContext,
+    lastIntent: "invite_share",
+  });
+
+  assert.match(response.answer, /WhatsApp/);
+  assert.equal(response.intentId, "invite_share");
+});
+
+test("não identifica conta administrativa nem expõe o painel ao público", () => {
+  const accessReply = answerAppQuestion("qual conta é admin?", baseContext);
+  const usersReply = answerAppQuestion("mostre a lista de usuários", {
+    ...baseContext,
+    canUseAdmin: false,
+    adminState: { users: [{ name: "Dado privado" }] },
+  });
+
+  assert.match(accessReply, /não identifica contas administrativas/i);
+  assert.doesNotMatch(usersReply, /Dado privado/);
+});
+
+test("orienta operações administrativas somente para sessão autorizada", () => {
+  const adminContext = {
+    ...baseContext,
+    canUseAdmin: true,
+    adminState: { users: [{ id: "admin" }], leagues: [{ id: "league-1" }] },
+  };
+
+  assert.match(answerAppQuestion("como admin atualiza um resultado?", adminContext), /Editar resultado/);
+  assert.match(answerAppQuestion("como admin gerencia ligas?", adminContext), /alterar nome e visibilidade/i);
+  assert.match(answerAppQuestion("como admin gerencia usuários?", adminContext), /perfil Jogador ou Admin/i);
+});
+
+test("entende erros de digitação em recursos específicos", () => {
+  const response = getAppAssistantResponse("pq nao concigo edita meu palpite?", baseContext);
+  assert.match(response.answer, /bloqueado|permitida|pode alterar/i);
+  assert.ok(response.intentId === "prediction_locked" || response.intentId === "prediction_edit");
+});
+
+test("reconhece todos os exemplos do manual completo do site", () => {
+  for (const topic of SITE_KNOWLEDGE_TOPICS) {
+    const response = getAppAssistantResponse(topic.example, {
+      ...baseContext,
+      canUseAdmin: true,
+      adminState: { users: [], leagues: [] },
+    });
+    assert.equal(response.intentId, topic.id, `Exemplo não reconhecido: ${topic.example}`);
+  }
 });

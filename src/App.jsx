@@ -62,6 +62,7 @@ function AppContent() {
         leagues,
         publicLeagues,
         activeLeague,
+        membersByLeague,
         ranking,
         userPredictions,
         bonusPredictions,

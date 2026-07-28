@@ -144,9 +144,17 @@ outro modelo externo e nao precisa de chave de API.
   apresenta um resumo dos usuarios, ligas, partidas e dados que precisam de
   atencao. Alteracoes continuam sendo feitas na aba Admin.
 
-Como as respostas sao baseadas em regras, o assistente responde aos assuntos
-previstos pela aplicacao e orienta o usuario quando nao reconhece uma pergunta.
-Nenhum dado e enviado a um servico de inteligencia artificial.
+O manual interno do assistente fica em
+`src/lib/appAssistantKnowledge.js`. Ele documenta o comportamento, as regras de
+seguranca e o conhecimento completo das telas de acesso, Inicio, Jogos, Bonus,
+Ranking, Liga, Perfil e Admin. O assistente tolera erros de digitacao, sugere
+perguntas relacionadas, entende continuacoes curtas da conversa e consulta os
+dados atuais da sessao sem inventar informacoes.
+
+Como as respostas sao baseadas em regras locais, nenhum dado e enviado a um
+servico de inteligencia artificial. O assistente nunca revela senhas, chaves,
+tokens ou codigos de recuperacao e nao identifica contas administrativas para
+usuarios sem autorizacao.
 
 ## Deploy na Vercel
 
